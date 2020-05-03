@@ -1,11 +1,14 @@
 # vfio
 
 ## What is this
-This bash script starts a VM (Among other small things) with optional USB and PCI passthrough arguments to dynamically generate arguments for 'qemu-system_x86-64'. rebind's all matched PCI devices to the vfio-pci driver for run time. Then undoes it and returns me to lightdm's login screen after VM shutdown. It isn't perfect but I hope to continue improving on it over time.
+This bash script starts a VM.
 
-I made this script so I can start a gaming VM for the few stubborn titles out there. It leaves my host headless during runtime and reprobes the nvidia drivers after the VM shuts down so I get sent back to my login screen. With a second GPU present, using the Looking Glass project would be easily possible.
+You can optionally specify a regex of USB and PCI devices. It will generate qemu arguments for them and automatically unbind/rebind the PCI devices to vfio-pci where it can. When the VM exits it attempts to reprobe the nvidia drivers and returns me to my lightdm login screen. It can also make a network bridge so your VM is LAN accessible.
 
-Got this working on my beloved Sabertooth X79 with a 3930k Intel CPU. And now also on my new build with an Aorus x570 Motherboard and a Ryzen 9 3900X AMD CPU.
+
+I made this so I could participate in the few stubborn titles out there. During PCI passthrough it leaves my host headless during runtime and reprobes the nvidia drivers after the VM shuts down so I return to my lightdm login screen like it never happened. With a second GPU present, using the Looking Glass project would be easily possible.
+
+It isn't perfect but I hope to continue improving on it over time.
 
 ## Why
 
@@ -58,3 +61,7 @@ An example run could look like:
   This would create br0, create and attach tap0, slave enp4s0 (Host network card) to the bridge, copy the mac of enp4s0 to br0 and dhcp. Then make usb and PCI arguments while rebinding the PCI devices to vfio. Then start the machine with half of your host's memory and all of the CPU threads.
   
   This example regex sees my SteelSeries mouse, AT2020 USB Microphone/DAC, My Ducky usb keyboard (Holtek chipset) and any attached Xbox controllers/receivers it sees during this run. They all go to the Windows guest during runtime.
+  
+## Anything else?
+
+I got this working on my beloved Sabertooth X79 with a 3930k Intel CPU and have since upgaded to an Aorus x570 Motherboard and a Ryzen 9 3900X AMD CPU. Glad I put the time into it to automate most of the annoying steps.
