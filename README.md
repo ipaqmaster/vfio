@@ -33,23 +33,23 @@ If you specify any PCI devices they will be unbound from their drivers and re-bo
 
 ## The full argument list [and examples] (For now)
 
-  -iso /path/to/a/diskimage.iso
-     If set, we will attach it with qemu's -cdrom parameter.
+`-iso /path/to/a/diskimage.iso`
+   If set, we will attach it with qemu's -cdrom parameter.
 
-  -image /dev/zvol/zpoolName/windows,format=raw
-     If set, we will attach this disk qemu's -drive parameter.
+`-image /dev/zvol/zpoolName/windows,format=raw`
+   If set, we will attach this disk qemu's -drive parameter.
 
-  -bridge br0,enp4s0,tap0
-     Creates bridge br0 and interface tap0 then attaches tap0 and enp4s0 to br0.
-     Clones mac of real interface enp4s0 onto br0 and uses dhclient to get an IP on br0. (I do this to keep my linux dhcp reservation at home)
-     Stops/starts networkmanager if found to be running
-     if argument not specified, the default qemu nat adapter will be used.
+`-bridge br0,enp4s0,tap0`
+   Creates bridge br0 and interface tap0 then attaches tap0 and enp4s0 to br0.
+   Clones mac of real interface enp4s0 onto br0 and uses dhclient to get an IP on br0. (I do this to keep my linux dhcp reservation at home)
+   Stops/starts networkmanager if found to be running
+   if argument not specified, the default qemu nat adapter will be used.
      
-  -memory 8192
-     Sets the memory in megabytes for this guest. If unspecified the default is half of the host total.
+`-memory 8192`
+   Sets the memory in megabytes for this guest. If unspecified the default is half of the host total.
 
-  -USB 'AT2020|SteelSeries|Holtek|Xbox'
-     If set enumerates through the specified regex for usb devices using 'lsusb' and generates qemu arguments for them.
+`-USB 'AT2020|SteelSeries|Holtek|Xbox'`
+   If set enumerates through the specified regex for usb devices using 'lsusb' and generates qemu arguments for them.
 
 ## Any examples to get a quick idea?
 
