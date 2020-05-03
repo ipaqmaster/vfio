@@ -67,14 +67,16 @@ If you specify any PCI devices they will be unbound from their drivers and re-bo
 ## Any examples to get a quick idea?
 
 An example run could look like:
-  sudo ./main -image /root/windows.img,format=raw -bridge br0,enp4s0,tap0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'
+  `sudo ./main -image /root/windows.img,format=raw -bridge br0,enp4s0,tap0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'`
   
-  This would create br0, create and attach tap0, slave enp4s0 (Host network card) to the bridge, copy the mac of enp4s0 to br0 and dhcp. Then make usb and PCI arguments while rebinding the PCI devices to vfio. Then start the machine with half of your host's memory and all of the CPU threads.
+  This would make and configure the bridge interface. Make usb and PCI arguments while rebinding the PCI devices to vfio. Then start the machine with half of your host's memory and all of the CPU threads.
   
-  This example regex sees my SteelSeries mouse, AT2020 USB Microphone/DAC, My Ducky usb keyboard (Holtek chipset) and any attached Xbox controllers/receivers it sees during this run. They all go to the Windows guest during runtime.
+  The USB regex is capable of finding a SteelSeries mouse, AT2020 USB Microphone/DAC, My Ducky usb keyboard (Holtek chipset) and any attached Xbox controllers/receivers it sees during this run. They all go to the Windows guest during runtime.
+  
+  The PCI one only has 'NVIDIA'. When running `lspci` this will see the GPU itself and (If the model has them) three children devices such as the Audio Controller, USB3.1 Host Controller and the parent Type-C UCSI Controller, passing all of them to the guest in one regex specification.
   
  ## Key Notes
-  - This only restores graphics with lightdm at the moment. Users of different display managers will need to manually manage their display manager beforehand (Better DM support will be added soon)
+  - This is only capable of starting `lightdm` at the moment. Anyone using a different display manager will need to manually do so in their ctrl+alt+f2 tab after the reprobe happens. I will add better automatic DM management soon.
   - The CPU topology is 'host' by default, so the VM will copy your host's cpu model.
   - If '-memory 12345' is omitted it'll just give half of what the host has. (32G host = 16G guest)
   - If '-bios /path/to/that.fd' is omitted the script defaults to '/usr/share/ovmf/x64/OVMF_CODE.fd'
@@ -85,4 +87,4 @@ An example run could look like:
 
 # Anything else?
 
-I got this working on my beloved Sabertooth X79 with a 3930k Intel CPU and have since upgaded to an Aorus x570 Motherboard and a Ryzen 9 3900X AMD CPU. Glad I put the time into it to automate most of the annoying steps.
+I got this working on my beloved Sabertooth X79 with a 3930k Intel CPU and have since upgaded to an Aorus x570 Motherboard and a Ryzen 9 3900X AMD CPU. Even though it's not perfect yet, I'm glad I put the time into it to automate most of the annoying steps and make it dynamic enough to handle hardware changes easily.
