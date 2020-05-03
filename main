@@ -1,0 +1,291 @@
+#!/bin/bash
+if [ "$EUID" -ne 0 ]; then echo "Please run me as root"; exit ; fi
+
+#     _                
+#  __| | ___ _ __  ___ 
+# / _` |/ _ \ '_ \/ __|
+#| (_| |  __/ |_) \__ \
+# \__,_|\___| .__/|___/
+#           |_|        
+
+for dependency in ip dhclient qemu-system-x86_64 brctl dhclient
+do
+  which $dependency >/dev/null 2>&1 || missing="$missing $dependency "
+done
+
+if [[ ! -z "$missing" ]];then echo -ne "Couldn't find these programs on your system:$missing\nPlease install the relevant packages or check your \$PATH." ; exit 1 ; fi
+
+# _____                 _   _                 
+#|  ___|   _ _ __   ___| |_(_) ___  _ __  ___ 
+#| |_ | | | | '_ \ / __| __| |/ _ \| '_ \/ __|
+#|  _|| |_| | | | | (__| |_| | (_) | | | \__ \ Somewhere to put these.
+#|_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
+# 
+
+function printHelp {
+  echo 
+  echo "This script is designed to make my single-gpu vfio mucking about easier."
+  echo "It's gone over so many iterations the past few months, I it's useful to others."
+  echo 
+  echo "Valid example arguments:"
+  echo
+  echo "  -iso /path/to/a/diskimage.iso"
+  echo "     If set, we will attach it with qemu's -cdrom parameter."
+  echo
+  echo "  -image /dev/zvol/zpool/windows,format=raw"
+  echo "     If set, we will attach this disk qemu's -drive parameter."
+  echo
+  echo "  -bridge br0,enp4s0,tap0"
+  echo "     Creates bridge br0 and interface tap0 then attaches tap0 and enp4s0 to br0."
+  echo "     Clones mac of real interface enp4s0 onto br0 and uses dhclient to get an IP on br0. (I do this to keep my linux dhcp reservation at home)"
+  echo "     Stops/starts networkmanager if found to be running"
+  echo "     if argument not specified, the default qemu nat adapter will be used."
+  echo
+  echo "  -memory 8192"
+  echo "     Sets the memory in megabytes for this guest. If unspecified the default is half of the host total."
+  echo
+  echo "  -USB 'AT2020|SteelSeries|Holtek|Xbox'"
+  echo "     If set enumerates through the specified regex for usb devices using 'lsusb' and generates qemu arguments for them."
+  echo "     This example regex detects My SteelSeries mouse, AT2020 USB Microphone/DAC, My Ducky usb keyboard (Holtek chipset) and any attached Xbox controllers/receivers it sees during this run."
+  echo
+  echo "Key Notes:"
+  echo "  - This only restores graphics with lightdm at the moment. Others will need to manually systemctl start their display manager."
+  echo "  - The CPU topology is 'host' by default, so the VM will copy your host's cpu model"
+  echo "  - If '-memory 12345' is omitted it'll just give half of what the host has. (32G host = 16G guest)"
+  echo "  - If '-bios /path/to/that.fd' is omitted the script defaults to '/usr/share/ovmf/x64/OVMF_CODE.fd'"
+  echo "  - This script passes through all host cores and threads=2 so a VM will get 12 cores with 2 threads each (24 total) on a run"
+  echo "      If your host will be busy with no cores to spare.. this may be an undesirable setting and you should consider core isolation."
+  echo "  - If you do not pass in any -usb or -pci arguments, the final command will run in a window in your display manager."
+  echo "      This is good for debugging VM problems, provisioning or just installing the OS before doing passthrough"
+  echo
+  exit 1
+}
+
+function bridger {
+    br=$1
+   int=$2 ; intMAC=$(ip link show $int|grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+')
+   tap=$3
+  mode=$4
+
+  if systemctl is-active NetworkManager >/dev/null ; then systemctl stop NetworkManager && export nm="seen" ; fi
+
+  if [ "$mode" == "start" ]
+  then
+    ip addr flush dev $int # Remove any IPs from the real int
+    if ! ip link show $br  >/dev/null 2>&1; then ip link add $br type bridge     ; fi
+    if   ip link show $int >/dev/null 2>&1; then ip link set dev $int master $br ; ip link set dev $br address $intMAC ; fi
+    if   ip link show $int >/dev/null 2>&1; then ip link set dev $int master $br ; fi
+    if ! ip link show $tap >/dev/null 2>&1; then ip tuntap add $tap mode tap     ; ip link set $tap master $br ; fi
+    for i in $br $int $tap; do ip link set $i up; done
+    echo ------------------
+    echo "New bridge details:"
+    brctl show $br
+    dhclient -v $br 2>&1|grep '^DHCP'
+    echo ------------------
+  else
+    dhclient -r $br >/dev/null 2>&1 && echo "dhclient lease released and process ended."
+    for i in $tap $br; do ip link set $i down ; ip link del $i; done
+    if ! ip link show br0 >/dev/null 2>&1; then echo "Bridge is gone."; fi
+    if [ "$nm" == "seen" ]; then systemctl restart NetworkManager ; fi && echo "NetworkManager is now back."
+  fi
+}
+
+function consoleDrivers { # Toggles rendering to Ctrl+Alt+F[0-9]. Needs to be unhooked for GPU passthrough.
+if [[ "$1" -eq 'bind' ]]; then bindstate='1';else bindstate='0';fi
+echo 0 > /sys/class/vtconsole/vtcon0/bind
+echo 0 > /sys/class/vtconsole/vtcon1/bind
+echo efi-framebuffer.0 > /sys/bus/platform/drivers/efi-framebuffer/$1
+}
+
+function enumerateUSBs { # This only makes arguments
+  lsusbOutput="$(lsusb)"
+  usbArgs="-usb"
+  USBDevices="$(grep -E "$usbREGEX" <<<"$lsusbOutput")"
+  
+  while read USBDevice
+  do
+      fullID="$(cut -d' ' -f6 <<<"$USBDevice")"
+    deviceID="$(cut -d':' -f2 <<<$fullID)"
+     manufID="$(cut -d':' -f1 <<<$fullID)"
+        Name="$(cut -d' ' -f7- <<<"$USBDevice")"
+    if [[ ! -z "$manufID" ]] && [[ ! -z "$deviceID" ]]
+    then
+      newUsbArg="-device usb-host,vendorid=0x$manufID,productid=0x$deviceID"
+        usbArgs="$usbArgs $newUsbArg"
+      printf "Found $manufID:$deviceID as  :\t'$Name'\nAdded to USB Args as:\t$newUsbArg\n\n"
+    else
+    printf "Skipping: '$USBDevice' as there was an issue finding it."
+    fi
+  done <<<"$USBDevices"
+}
+
+function enumeratePCIs { # This makes arguments and also unbinds from drivers. Optional vfio-pci rebinding.
+
+  if ! lsmod|grep -q vfio_pci; then modprobe vfio-pci; fi
+  systemctl stop lightdm # Should make display managing it's own function.
+  consoleDrivers unbind  # Required to avoid mmap issues
+
+  lspciOutput="$(lspci -nn)"
+  PCIDevices="$(grep -E "$pciREGEX" <<<"$lspciOutput")"
+  pciArgs=""
+  inc=0
+  while read PCIDevice
+  do
+    buspath="0000:$(cut -d' ' -f1<<<$PCIDevice)"
+    echo "PCI Bus Path is: $buspath"
+    if [[ $1 == *"unbind"* ]]
+    then
+      echo "Unbinding [If this is the video card, the display may cut out here]"
+      echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
+    fi
+  
+    
+    if [[ $1 == *"vfiobind"* ]]
+    then
+      vendorClass="$(grep -oE '(([0-9]|[a-z]){4}|:){3}' <<< $PCIDevice)"
+           vendor="$(cut -d':' -f1 <<<$vendorClass)"
+            class="$(cut -d':' -f2 <<<$vendorClass)"
+      echo "Going to bind ${vendor}:${class} to vfio-pci."
+      echo "This device is: $PCIDevice"
+      echo "0x$vendor 0x$class" > /sys/bus/pci/drivers/vfio-pci/new_id
+      if [[ $? -ne "0" ]]; then echo "Rebind to vfio-pci failed.."; fi
+      echo 1 > /sys/bus/pci/rescan
+      pciArgs="$pciArgs -device vfio-pci,host=$buspath,id=hostdev$inc"
+    fi
+    echo
+    inc=$((($inc+1)))
+  done <<<"$PCIDevices"
+  
+  if [[ $var == *"vfiobind"* ]] ; then echo -ne "Here are the completed pciArgs:\n    $pciArgs"; fi
+}
+
+function restoreHostDisplay {
+  pciREGEX="$1"
+  enumeratePCIs unbind
+
+  list="nvidia_drm nvidia_modeset nvidia" #Some drivers we must reprobe on the host
+  for module in $list; do rmmod $module; done
+  for module in $list; do modprobe $module; done
+  systemctl start lightdm
+}
+
+#    _                  
+#   / \   _ __ __ _ ___ 
+#  / _ \ | '__/ _` / __|
+# / ___ \| | | (_| \__ \ Learn about this run's arguments.
+#/_/   \_\_|  \__, |___/
+#             |___/     
+
+if [[ -z "$@" ]] ; then echo "No args? Please try something like the below and try again:" ; printHelp ; fi
+
+while [ $# -gt 0 ]
+do
+  case "$1" in
+    -bridge|-BRIDGE)
+       bridgeArgs="$(sed 's/,/ /g' <<<$2)"
+       shift
+    ;;
+     -memory|-MEMORY|-MEM|-mem)
+       memoryArgs="$2"
+       shift
+    ;;
+     -usb|-USB)
+       usbREGEX="$2"
+       shift
+    ;;
+     -pci|-PCI)
+        pciREGEX="$2"
+       shift
+    ;;
+     -iso|-ISO)
+        iso="$2"
+        shift
+    ;;
+     -bios|-BIOS)
+        biosPath="$2"
+        shift
+    ;;
+     -image|-IMAGE)
+        image="$2"
+        shift
+    ;;
+     *) /bin/echo "Unknown argument $1"
+        printHelp
+    ;;
+    esac
+    shift
+done
+
+# ____                 _____ _ _       _     _   
+#|  _ \ _ __ ___      |  ___| (_) __ _| |__ | |_ 
+#| |_) | '__/ _ \_____| |_  | | |/ _` | '_ \| __|
+#|  __/| | |  __/_____|  _| | | | (_| | | | | |_ 
+#|_|   |_|  \___|     |_|   |_|_|\__, |_| |_|\__|
+#                                |___/
+
+  # Check for active IOMMU module.
+if ! lsmod |grep -qi iommu; then echo -ne "IOMMU isn't loaded?\n  For an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader.\n  If you're on an AMD machine instead add these two: 'iommu=pt iommu=1'\n\n  If you've already done this and rebooted, your host may not be compatible or some relevant bios settings could be disabled.\n  Feel free to ask about this in case it's a script fault.\n" ; exit 1; fi
+
+  # Determine guest memory
+if [ -z "$memoryArgs" ]
+then
+  echo -ne "No -memory argument used, will use half of host: "
+  totalHostMemoryKB=$(grep -oPm1 '(?!=MemTotal\:(\ )+)[0-9]+' /proc/meminfo)
+  if [ ! -z "$totalHostMemoryKB" ]
+  then
+    guestmemoryMB="$((($totalHostMemoryKB / 2)))K"
+    echo -ne "$guestmemoryMB\n"
+  else
+    echo "Failed to find a default memory value for the guest."
+  fi
+else
+  guestmemoryMB=$memoryArgs
+fi
+
+  # Make the bridge
+if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs start ; fi
+
+  # Evaulate biosPath
+if [[ -z "$biosPath" ]]; then biosPath="/usr/share/ovmf/x64/OVMF_CODE.fd" ; fi
+
+# Put QEMU arguments together
+
+  machineArgs="-machine q35,accel=kvm,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
+
+  cpuArgs="-cpu host,kvm=off"
+  smpArgs="-smp sockets=1,cores=$(grep -Pom1 'cpu cores.*\ \K([0-9]+)$' /proc/cpuinfo),threads=2" #Use all by default
+  coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
+  coreArgs="$coreArgs -drive file=$image,id=disk"
+  coreArgs="$coreArgs -bios $biosPath"
+    if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $isoPath" ; fi
+    if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no USB&PCI passthrough used.
+
+networkArgs="-device virtio-net,netdev=network0"
+if [[ ! -z "$bridgeArgs" ]];
+then
+  networkArgs="$networkArgs -netdev tap,id=network0,ifname=tap0,script=no,downscript=no" #BRIDGE
+else
+  networkArgs="$networkArgs -netdev user,id=network0" #NAT
+fi
+
+if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
+if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind+vfiobind ; consoleDrivers unbind ; fi
+
+qemu-system-x86_64 $coreArgs $networkArgs $usbArgs $pciArgs
+
+#  ____ _                              
+# / ___| | ___  __ _ _ __  _   _ _ __  
+#| |   | |/ _ \/ _` | '_ \| | | | '_ \ 
+#| |___| |  __/ (_| | | | | |_| | |_) | # Return home
+# \____|_|\___|\__,_|_| |_|\__,_| .__/ 
+#                               |_|    
+
+  # Undo our bridge
+if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs stop ; fi
+
+  # Make the console usable again if PCI was used.
+if [ ! -z "$pciREGEX" ];
+then
+  consoleDrivers bind
+  if [[ $pciREGEX == *"NVIDIA"* ]] ; then restoreHostDisplay NVIDIA ; fi # Unbind nvidia card and reprobe drivers, then the display manager.
+fi
