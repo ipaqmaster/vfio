@@ -1,6 +1,4 @@
-# vfio
-
-## What is this
+# What is this
 This bash script starts a VM.
 
 You can optionally specify a regex of USB and PCI devices. It will generate qemu arguments for them and automatically unbind/rebind the PCI devices to vfio-pci where it can. When the VM exits it attempts to reprobe the nvidia drivers and returns me to my lightdm login screen. It can also make a network bridge so your VM is LAN accessible.
@@ -10,7 +8,7 @@ I made this so I could participate in the few stubborn titles out there. During 
 
 It isn't perfect but I hope to continue improving on it over time.
 
-## Why
+# Why
 
 Short: Modern VFIO/IOMMU Support have made using both sides of the gaming coin easy; And even better supported on this generation's motherboards, I've found.
 
@@ -23,9 +21,9 @@ Let alone some titles (while amazing!) which employ third party Anti-Cheat servi
 
 Shortest: iommu go brr
 
-## The script, arguments and examples
+# The script, arguments and examples
 
-### About using it
+## About using it
 
 The absolute minimum requirement is the `-image` argument. This will only start the VM just on your desktop in the current X session. The default QEMU user-mode networking will also be used (which will NAT through your desktop's existing IP). This is typically what you'd run during the installation stage with the -iso flag, too.
 
@@ -33,7 +31,7 @@ If you specify any USB devices their arguments will be generated for the qemu-sy
 
 If you specify any PCI devices they will be unbound from their drivers and re-bound to 'vfio-pci' first, then will have their qemu-system arguments generated.
 
-### The full argument list [and examples] (For now)
+## The full argument list [and examples] (For now)
 
   -iso /path/to/a/diskimage.iso
      If set, we will attach it with qemu's -cdrom parameter.
@@ -53,7 +51,7 @@ If you specify any PCI devices they will be unbound from their drivers and re-bo
   -USB 'AT2020|SteelSeries|Holtek|Xbox'
      If set enumerates through the specified regex for usb devices using 'lsusb' and generates qemu arguments for them.
 
-### Any examples to get a quick idea?
+## Any examples to get a quick idea?
 
 An example run could look like:
   sudo ./main -image /root/windows.img,format=raw -bridge br0,enp4s0,tap0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'
@@ -62,6 +60,6 @@ An example run could look like:
   
   This example regex sees my SteelSeries mouse, AT2020 USB Microphone/DAC, My Ducky usb keyboard (Holtek chipset) and any attached Xbox controllers/receivers it sees during this run. They all go to the Windows guest during runtime.
   
-## Anything else?
+# Anything else?
 
 I got this working on my beloved Sabertooth X79 with a 3930k Intel CPU and have since upgaded to an Aorus x570 Motherboard and a Ryzen 9 3900X AMD CPU. Glad I put the time into it to automate most of the annoying steps.
