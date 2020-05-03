@@ -1,7 +1,7 @@
 # vfio
 
 ## What is this
-This bash script (Among other small things) takes optional USB and PCI passthrough arguments to dynamically generate arguments for 'qemu-system_x86-64'. rebind's all matched PCI devices to the vfio-pci driver for run time. Then undoes it and returns me to lightdm's login screen after VM shutdown. It isn't perfect but I hope to continue improving on it over time.
+This bash script starts a VM (Among other small things) with optional USB and PCI passthrough arguments to dynamically generate arguments for 'qemu-system_x86-64'. rebind's all matched PCI devices to the vfio-pci driver for run time. Then undoes it and returns me to lightdm's login screen after VM shutdown. It isn't perfect but I hope to continue improving on it over time.
 
 I made this script so I can start a gaming VM for the few stubborn titles out there. It leaves my host headless during runtime and reprobes the nvidia drivers after the VM shuts down so I get sent back to my login screen. With a second GPU present, using the Looking Glass project would be easily possible.
 
