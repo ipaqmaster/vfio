@@ -107,7 +107,7 @@ function enumerateUSBs { # This only makes arguments
 function enumeratePCIs { # This makes arguments and also unbinds from drivers. Optional vfio-pci rebinding.
 
   if ! lsmod|grep -q vfio_pci; then modprobe vfio-pci; fi
-  systemctl stop lightdm # Should make display managing it's own function.
+  systemctl stop display-manager
   consoleDrivers unbind  # Required to avoid mmap issues
 
   lspciOutput="$(lspci -nn)"
@@ -151,7 +151,7 @@ function restoreHostDisplay {
   list="nvidia_drm nvidia_modeset nvidia" #Some drivers we must reprobe on the host
   for module in $list; do rmmod $module; done
   for module in $list; do modprobe $module; done
-  systemctl start lightdm
+  systemctl start display-manager
 }
 
 #    _                  
@@ -274,6 +274,6 @@ if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs stop ; fi
   # Make the console usable again if PCI was used.
 if [ ! -z "$pciREGEX" ];
 then
-  consoleDrivers bind
   if [[ $pciREGEX == *"NVIDIA"* ]] ; then restoreHostDisplay NVIDIA ; fi # Unbind nvidia card and reprobe drivers, then the display manager.
+  consoleDrivers bind
 fi
