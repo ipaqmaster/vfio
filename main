@@ -23,41 +23,26 @@ if [[ ! -z "$missing" ]];then echo -ne "Couldn't find these programs on your sys
 # 
 
 function printHelp {
-  echo 
   echo "This script is designed to make my single-gpu vfio mucking about easier."
   echo "It's gone over so many iterations the past few months, I it's useful to others."
   echo 
   echo "Valid example arguments:"
   echo
   echo "  -iso /path/to/a/diskimage.iso"
-  echo "     If set, we will attach it with qemu's -cdrom parameter."
-  echo
   echo "  -image /dev/zvol/zpool/windows,format=raw"
-  echo "     If set, we will attach this disk qemu's -drive parameter."
-  echo
   echo "  -bridge br0,enp4s0,tap0"
-  echo "     Creates bridge br0 and interface tap0 then attaches tap0 and enp4s0 to br0."
-  echo "     Clones mac of real interface enp4s0 onto br0 and uses dhclient to get an IP on br0. (I do this to keep my linux dhcp reservation at home)"
-  echo "     Stops/starts networkmanager if found to be running"
-  echo "     if argument not specified, the default qemu nat adapter will be used."
+  echo "    Optional, if empty the default qemu NAT adapter is used."
   echo
-  echo "  -memory 8192"
-  echo "     Sets the memory in megabytes for this guest. If unspecified the default is half of the host total."
+  echo "  -memory 8192M / -memory 8G"
+  echo "    Default is half that of system total memory"
   echo
-  echo "  -USB 'AT2020|SteelSeries|Holtek|Xbox'"
-  echo "     If set enumerates through the specified regex for usb devices using 'lsusb' and generates qemu arguments for them."
-  echo "     This example regex detects My SteelSeries mouse, AT2020 USB Microphone/DAC, My Ducky usb keyboard (Holtek chipset) and any attached Xbox controllers/receivers it sees during this run."
+  echo "  -USB 'SteelSeries|Keyboard|Xbox|1234:5678'"
+  echo "    A regex for lsusb parsing. Can be anything that matches a specific device line"
   echo
-  echo "Key Notes:"
-  echo "  - This only restores graphics with lightdm at the moment. Others will need to manually systemctl start their display manager."
-  echo "  - The CPU topology is 'host' by default, so the VM will copy your host's cpu model"
-  echo "  - If '-memory 12345' is omitted it'll just give half of what the host has. (32G host = 16G guest)"
-  echo "  - If '-bios /path/to/that.fd' is omitted the script defaults to '/usr/share/ovmf/x64/OVMF_CODE.fd'"
-  echo "  - This script passes through all host cores and threads=2 so a VM will get 12 cores with 2 threads each (24 total) on a run"
-  echo "      If your host will be busy with no cores to spare.. this may be an undesirable setting and you should consider core isolation."
-  echo "  - If you do not pass in any -usb or -pci arguments, the final command will run in a window in your display manager."
-  echo "      This is good for debugging VM problems, provisioning or just installing the OS before doing passthrough"
+  echo "  -PCI 'Realtek|NVIDIA|10ec:8168'"
+  echo "    A regex for lspci parsing. Example will take any nvidia and Realtek cards"
   echo
+  echo "Please see the README.md for more specific information on overall script behavior"
   exit 1
 }
 
@@ -176,7 +161,7 @@ function restoreHostDisplay {
 #/_/   \_\_|  \__, |___/
 #             |___/     
 
-if [[ -z "$@" ]] ; then echo "No args? Please try something like the below and try again:" ; printHelp ; fi
+if [[ -z "$@" ]] ; then echo "No args seen. Printing help" ; printHelp ; fi
 
 while [ $# -gt 0 ]
 do
@@ -208,6 +193,9 @@ do
      -image|-IMAGE)
         image="$2"
         shift
+    ;;
+     --help|-help|--HELP|-HELP)
+        printHelp
     ;;
      *) /bin/echo "Unknown argument $1"
         printHelp
