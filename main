@@ -1,5 +1,6 @@
 #!/bin/bash
 if [ "$EUID" -ne 0 ]; then echo "Please run me as root"; exit ; fi
+DRY=1 # Always dry unless flag '-run' is detected.
 
 #     _                
 #  __| | ___ _ __  ___ 
@@ -18,7 +19,7 @@ if [[ ! -z "$missing" ]];then echo -ne "Couldn't find these programs on your sys
 # _____                 _   _                 
 #|  ___|   _ _ __   ___| |_(_) ___  _ __  ___ 
 #| |_ | | | | '_ \ / __| __| |/ _ \| '_ \/ __|
-#|  _|| |_| | | | | (__| |_| | (_) | | | \__ \ Somewhere to put these.
+#|  _|| |_| | | | | (__| |_| | (_) | | | \__ \
 #|_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
 # 
 
@@ -52,10 +53,10 @@ function bridger {
    tap=$3
   mode=$4
 
-  if systemctl is-active NetworkManager >/dev/null ; then systemctl stop NetworkManager && export nm="seen" ; fi
 
-  if [ "$mode" == "start" ]
+  if [ "$mode" == "start" ] && [ "$DRY" -eq "0" ]
   then
+    if systemctl is-active NetworkManager >/dev/null ; then systemctl stop NetworkManager ; export nm="seen" ; fi
     ip addr flush dev $int # Remove any IPs from the real int
     if ! ip link show $br  >/dev/null 2>&1; then ip link add $br type bridge     ; fi
     if   ip link show $int >/dev/null 2>&1; then ip link set dev $int master $br ; ip link set dev $br address $intMAC ; fi
@@ -67,7 +68,11 @@ function bridger {
     brctl show $br
     dhclient -v $br 2>&1|grep '^DHCP'
     echo ------------------
-  else
+  elif [ "$mode" == "start" ] && [ "$DRY" -eq "1" ]
+  then
+    echo "[DRY] Bridge creation skipped"
+  elif [ "$mode" == "stop" ] && [ "$DRY" -eq "0" ]
+  then
     dhclient -r $br >/dev/null 2>&1 && echo "dhclient lease released and process ended."
     for i in $tap $br; do ip link set $i down ; ip link del $i; done
     if ! ip link show br0 >/dev/null 2>&1; then echo "Bridge is gone."; fi
@@ -76,28 +81,31 @@ function bridger {
 }
 
 function consoleDrivers { # Toggles rendering to Ctrl+Alt+F[0-9]. Needs to be unhooked for GPU passthrough.
-if [[ "$1" -eq 'bind' ]]; then bindstate='1';else bindstate='0';fi
-echo 0 > /sys/class/vtconsole/vtcon0/bind
-echo 0 > /sys/class/vtconsole/vtcon1/bind
-echo efi-framebuffer.0 > /sys/bus/platform/drivers/efi-framebuffer/$1
+  if [ "$DRY" -eq "0" ]
+  then 
+    if [[ "$1" -eq 'bind' ]]; then bindstate='1';else bindstate='0';fi
+    echo $bindstate > /sys/class/vtconsole/vtcon0/bind
+    echo $bindstate > /sys/class/vtconsole/vtcon1/bind
+    echo efi-framebuffer.0 > /sys/bus/platform/drivers/efi-framebuffer/$1
+  fi
 }
 
 function enumerateUSBs { # This only makes arguments
+  echo "USB:"
   lsusbOutput="$(lsusb)"
   usbArgs="-usb"
   USBDevices="$(grep -E "$usbREGEX" <<<"$lsusbOutput")"
   
   while read USBDevice
   do
-      fullID="$(cut -d' ' -f6 <<<"$USBDevice")"
-    deviceID="$(cut -d':' -f2 <<<$fullID)"
-     manufID="$(cut -d':' -f1 <<<$fullID)"
+     manufID="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$USBDevice| cut -d':' -f1)"
+    deviceID="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$USBDevice| cut -d':' -f2)"
         Name="$(cut -d' ' -f7- <<<"$USBDevice")"
     if [[ ! -z "$manufID" ]] && [[ ! -z "$deviceID" ]]
     then
       newUsbArg="-device usb-host,vendorid=0x$manufID,productid=0x$deviceID"
         usbArgs="$usbArgs $newUsbArg"
-      printf "Found $manufID:$deviceID as  :\t'$Name'\nAdded to USB Args as:\t$newUsbArg\n\n"
+      printf "  Found $manufID:$deviceID as  :\t'$Name'\n    Added to USB Args as:\t$newUsbArg\n\n"
     else
     printf "Skipping: '$USBDevice' as there was an issue finding it."
     fi
@@ -106,38 +114,39 @@ function enumerateUSBs { # This only makes arguments
 
 function enumeratePCIs { # This makes arguments and also unbinds from drivers. Optional vfio-pci rebinding.
 
+  echo "PCI:"
   if ! lsmod|grep -q vfio_pci; then modprobe vfio-pci; fi
-  systemctl stop display-manager
+  if systemctl is-active display-manager >/dev/null && [ "$DRY" -eq "0" ]; then systemctl stop display-manager ; export dm="seen" ; fi
   consoleDrivers unbind  # Required to avoid mmap issues
 
   lspciOutput="$(lspci -nn)"
   PCIDevices="$(grep -E "$pciREGEX" <<<"$lspciOutput")"
-  pciArgs=""
   inc=0
   while read PCIDevice
   do
+    echo "  Found $PCIDevice"
     buspath="0000:$(cut -d' ' -f1<<<$PCIDevice)"
-    echo "PCI Bus Path is: $buspath"
-    if [[ $1 == *"unbind"* ]]
+
+    if [[ $1 == *"unbind"* ]] && [ "$DRY" -eq "0" ]
     then
-      echo "Unbinding [If this is the video card, the display may cut out here]"
-      echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
+      echo "    Unbinding from it's driver" ; echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
+    elif [[ $1 == *"unbind"* ]] && [ "$DRY" -eq "1" ]
+    then
+      echo "    [DRY] Not unbinding it"
     fi
-  
-    
-    if [[ $1 == *"vfiobind"* ]]
+
+    if [[ $1 == *"vfiobind"* ]] && [ "$DRY" -eq "0" ]
     then
-      vendorClass="$(grep -oE '(([0-9]|[a-z]){4}|:){3}' <<< $PCIDevice)"
-           vendor="$(cut -d':' -f1 <<<$vendorClass)"
-            class="$(cut -d':' -f2 <<<$vendorClass)"
-      echo "Going to bind ${vendor}:${class} to vfio-pci."
-      echo "This device is: $PCIDevice"
-      echo "0x$vendor 0x$class" > /sys/bus/pci/drivers/vfio-pci/new_id
+      vendor="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$PCIDevice| cut -d':' -f1)"
+       class="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$PCIDevice| cut -d':' -f2)"
+      echo "    Binding it to vfio-pci" ; echo "0x$vendor 0x$class" > /sys/bus/pci/drivers/vfio-pci/new_id
       if [[ $? -ne "0" ]]; then echo "Rebind to vfio-pci failed.."; fi
       echo 1 > /sys/bus/pci/rescan
-      pciArgs="$pciArgs -device vfio-pci,host=$buspath,id=hostdev$inc"
+    elif [[ $1 == *"vfiobind"* ]] && [ "$DRY" -eq "1" ]
+    then
+      echo "    [DRY] Not binding to vfio-pci"
     fi
-    echo
+    pciArgs="$pciArgs -device vfio-pci,host=$buspath,id=hostdev$inc"
     inc=$((($inc+1)))
   done <<<"$PCIDevices"
   
@@ -145,19 +154,20 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
 }
 
 function restoreHostDisplay {
-  pciREGEX="$1"
-  enumeratePCIs unbind
+  pciREGEX="$1" ; enumeratePCIs unbind
 
+  echo "Attempting to rebind nvidia drivers..."
   list="nvidia_drm nvidia_modeset nvidia" #Some drivers we must reprobe on the host
   for module in $list; do rmmod $module; done
   for module in $list; do modprobe $module; done
-  systemctl start display-manager
+  echo "Attempting to restart your display-manager..."
+  if  [ "$dm" == "seen" ]; then systemctl start display-manager ; fi
 }
 
 #    _                  
 #   / \   _ __ __ _ ___ 
 #  / _ \ | '__/ _` / __|
-# / ___ \| | | (_| \__ \ Learn about this run's arguments.
+# / ___ \| | | (_| \__ \
 #/_/   \_\_|  \__, |___/
 #             |___/     
 
@@ -180,6 +190,10 @@ do
     ;;
      -pci|-PCI)
         pciREGEX="$2"
+       shift
+    ;;
+     -run|-RUN)
+       DRY="0"
        shift
     ;;
      -iso|-ISO)
@@ -211,13 +225,15 @@ done
 #|_|   |_|  \___|     |_|   |_|_|\__, |_| |_|\__|
 #                                |___/
 
+if [ $DRY -eq "1" ]; then echo "This is a DRY run. Please specify -run to actually run" ; echo ; fi
+
   # Check for active IOMMU module.
 if ! lsmod |grep -qi iommu; then echo -ne "IOMMU isn't loaded?\n  For an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader.\n  If you're on an AMD machine instead add these two: 'iommu=pt iommu=1'\n\n  If you've already done this and rebooted, your host may not be compatible or some relevant bios settings could be disabled.\n  Feel free to ask about this in case it's a script fault.\n" ; exit 1; fi
 
   # Determine guest memory
 if [ -z "$memoryArgs" ]
 then
-  echo -ne "No -memory argument used, will use half of host: "
+  echo -ne "No -memory argument provided, will use half of host: "
   totalHostMemoryKB=$(grep -oPm1 '(?!=MemTotal\:(\ )+)[0-9]+' /proc/meminfo)
   if [ ! -z "$totalHostMemoryKB" ]
   then
@@ -234,8 +250,19 @@ fi
 if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs start ; fi
 
   # Evaulate biosPath
-if [[ -z "$biosPath" ]]; then biosPath="/usr/share/ovmf/x64/OVMF_CODE.fd" ; fi
+if [[ -z "$biosPath" ]]
+then
+  defaultBiosPath="/usr/share/ovmf/x64/OVMF_CODE.fd"
+  if [[ ! -f "$defaultBiosPath" ]]
+  then
+    echo "No -bios argument provided and couldn't find default '$defaultBiosPath'. Please install OVMF or set your .fd file with the -bios argument"
+  else
+    echo "No -bios argument provided, using discovered default: $defaultBiosPath"
+    biosPath=$defaultBiosPath
+  fi
+fi
 
+echo
 # Put QEMU arguments together
 
   machineArgs="-machine q35,accel=kvm,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
@@ -256,15 +283,28 @@ else
   networkArgs="$networkArgs -netdev user,id=network0" #NAT
 fi
 
+
 if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
 if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind+vfiobind ; consoleDrivers unbind ; fi
 
-qemu-system-x86_64 $coreArgs $networkArgs $usbArgs $pciArgs
+if [ "$DRY" == "1" ];
+then
+  echo "---------------------"
+  echo "Here are the completed args from this DRY run:"
+  echo "Core: $coreArgs"
+  echo "Net : $networkArgs"
+  echo "USB : $usbArgs"
+  echo "PCI : $pciArgs"
+  echo "Run the same command again but with '-run' to actually pass these to qemu-system-x86_64"
+  exit 0
+else
+  qemu-system-x86_64 $coreArgs $networkArgs $usbArgs $pciArgs
+fi
 
 #  ____ _                              
 # / ___| | ___  __ _ _ __  _   _ _ __  
 #| |   | |/ _ \/ _` | '_ \| | | | '_ \ 
-#| |___| |  __/ (_| | | | | |_| | |_) | # Return home
+#| |___| |  __/ (_| | | | | |_| | |_) |
 # \____|_|\___|\__,_|_| |_|\__,_| .__/ 
 #                               |_|    
 
@@ -272,8 +312,8 @@ qemu-system-x86_64 $coreArgs $networkArgs $usbArgs $pciArgs
 if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs stop ; fi
 
   # Make the console usable again if PCI was used.
-if [ ! -z "$pciREGEX" ];
+if [ ! -z "$pciREGEX" ] && [[ $pciREGEX == *"NVIDIA"* ]]
 then
-  if [[ $pciREGEX == *"NVIDIA"* ]] ; then restoreHostDisplay NVIDIA ; fi # Unbind nvidia card and reprobe drivers, then the display manager.
+  restoreHostDisplay NVIDIA 
   consoleDrivers bind
 fi
