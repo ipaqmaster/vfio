@@ -24,21 +24,21 @@ Modern VFIO/IOMMU Support has made using both sides of the gaming coin plausible
 
 I made this so I could participate in the few stubborn titles out there with ease. It leaves my host running, SSHable, pingable and headless; then returns me to my display manager's login screen once the VM shuts down. All that rebinding and SSHing in from the laptop to restore X inspired me to make this management script so any future passthrough changes become a breeze.
 
+Some titles, while great also employ third party Anti-Cheat services. Driver level anti-cheats like BattlEye and Easy Anti-Cheat aren't something you can throw at WINE; leaving you stuck in Single Player experiences for those titles or the worst case, titles not running at all.
+
 With a second GPU present using the Looking Glass project is possible, leaving the VM headless instead.
 
 This script isn't perfect but I hope to continue improving on it.
-
-
-Let alone some titles (while amazing!) which employ third party Anti-Cheat services. And while that's fine... Driver level anti-cheats like BattlEye and Easy Anti-Cheat aren't something you can throw at WINE; leaving you stuck in Single Player experiences for those titles or the worst case, not running at all.
 
 # The script, arguments, and examples
 
 ## About using it
 
-The absolute minimum requirement to get started is the `-image` and `iso` arguments. This will only start the VM with a new window in your X session.
-The default QEMU user-mode networking will also be used (which will NAT through your desktop's existing IP).
+The absolute minimum requirement to get started is the `-image` and the `-iso` arguments. Using just these two will start the VM in a normal window in your X session. This is useful for the installation of an OS and adding drivers before moving on with passthrough.
 
-This script makes use of some virtio features you may need to download the VirtIO drivers for the guest to make use of the network interface.
+The default QEMU user-mode networking is used by default which will NAT the VM's traffic through your desktop's existing IP.
+
+This script also makes use of some virtio features you may need to download the VirtIO drivers for the guest to make use of the network interface.
 
 ## Arguments this script will take [and examples]
 
