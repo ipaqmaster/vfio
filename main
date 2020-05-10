@@ -71,7 +71,6 @@ function bridger {
     ip addr flush dev $int # Remove any IPs from the real int
     if ! ip link show $br  >/dev/null 2>&1; then ip link add $br type bridge     ; fi
     if   ip link show $int >/dev/null 2>&1; then ip link set dev $int master $br ; ip link set dev $br address $intMAC ; fi
-    if   ip link show $int >/dev/null 2>&1; then ip link set dev $int master $br ; fi
     if ! ip link show $tap >/dev/null 2>&1; then ip tuntap add $tap mode tap     ; ip link set $tap master $br ; fi
     for i in $br $int $tap; do ip link set $i up; done
     echo ------------------
@@ -332,6 +331,7 @@ then
   echo "Net : $networkArgs"
   echo "USB : $usbArgs"
   echo "PCI : $pciArgs"
+  if [ ! -z "$taskset" ]; then echo "Taskset parms: $taskset"; fi
   echo "Run the same command again but with '-run' to actually pass these to qemu-system-x86_64"
   exit 0
 else
