@@ -9,7 +9,7 @@ DRY=1 # Always dry unless flag '-run' is detected.
 # \__,_|\___| .__/|___/
 #           |_|        
 
-for dependency in ip dhclient qemu-system-x86_64 brctl dhclient
+for dependency in ip dhclient qemu-system-x86_64 brctl dhclient taskset
 do
   which $dependency >/dev/null 2>&1 || missing="$missing $dependency "
 done
@@ -29,10 +29,16 @@ function printHelp {
   echo 
   echo "Valid example arguments:"
   echo
-  echo "  -iso /path/to/a/diskimage.iso"
+  echo "[REQUIRED]"
   echo "  -image /dev/zvol/zpool/windows,format=raw"
+  echo "    A file or blockdevice to give the guest. Complete with it's [Qemu recognised] format"
+  echo
+  echo "[OPTIONAL]"
+  echo "  -iso /path/to/a/diskimage.iso"
+  echo "    If you're installing the OS for drivers you may wish to include this"
+  echo
   echo "  -bridge br0,enp4s0,tap0"
-  echo "    Optional, if empty the default qemu NAT adapter is used."
+  echo "    If not specified, the default qemu NAT adapter is used."
   echo
   echo "  -memory 8192M / -memory 8G"
   echo "    Default is half that of system total memory"
@@ -43,7 +49,12 @@ function printHelp {
   echo "  -PCI 'Realtek|NVIDIA|10ec:8168'"
   echo "    A regex for lspci parsing. Example will take any nvidia and Realtek cards"
   echo
-  echo "Please see the README.md for more specific information on overall script behavior"
+  echo "  -taskset 0,1,2,3,4,5,6 / -taskset 0,2,4,8"
+  echo "    A comma delimited list of host threads the Guest is allowed to execute on."
+  echo "    (Setting this also shapes the guest CPU topology to match.)"
+  echo "    If you've configured core isolation on the host, this is the argument for you!"
+  echo
+  echo "Please see the README.md file for more information about the flags."
   exit 1
 }
 
@@ -204,6 +215,11 @@ do
         biosPath="$2"
         shift
     ;;
+     -taskset|-TASKSET)
+        tasksetThreads="$2"
+        taskset="taskset -c $tasksetThreads"
+        shift
+    ;;
      -image|-IMAGE)
         image="$2"
         shift
@@ -229,6 +245,27 @@ if [ $DRY -eq "1" ]; then echo "This is a DRY run. Please specify -run to actual
 
   # Check for active IOMMU module.
 if ! lsmod |grep -qi iommu; then echo -ne "IOMMU isn't loaded?\n  For an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader.\n  If you're on an AMD machine instead add these two: 'iommu=pt iommu=1'\n\n  If you've already done this and rebooted, your host may not be compatible or some relevant bios settings could be disabled.\n  Feel free to ask about this in case it's a script fault.\n" ; exit 1; fi
+
+  # Determine Host cpu cores/threads and what the guest gets based on -taskset (if specified).
+hostThreads=$(grep -Pom1 'siblings.*\ \K([0-9]+)$' /proc/cpuinfo )
+  hostCores=$(grep -Pom1 'cpu cores.*\ \K([0-9]+)$' /proc/cpuinfo)
+  if [ "$((($hostCores * 2)))" == "$hostThreads" ]; then hostIsThreaded=1; fi
+
+if [ -z "$taskset" ]
+then
+  guestCores=$hostCores ; if [ ! -z $hostIsThreaded ]; then guestThreads=2; else guestThreads=1; fi
+  echo "-taskset not specified, using all host cores: ($hostCores) with ($hostThreads) threads."
+else
+  if grep -qE '^([0-9]|,)+$' <<< $tasksetThreads
+  then
+    echo "-taskset specified.. This run will limiting the guest to using host CPU threads: $tasksetThreads"
+    OLDIFS="$IFS" ; IFS=, ; tasksetCount=$(echo $tasksetThreads| wc -w) ; IFS="$OLDIFS"
+      # Check if specified -taskset thread count is divisible by 2. Use hyperthreading/smt if supported
+    if (( $tasksetCount % 2 == 0 )) && [ "$hostIsThreaded" == "1" ] ; then guestCores=$((( $tasksetCount / 2 ))) ; guestThreads=2; else guestCores=$tasksetCount ; guestThreads=1 ; fi
+  else
+    echo "This script's -taskset flag only accepts comma delimited threads at the moment such as: 0,1,2,3,4,5,6, or 0,2,4,8 -- Sorry!"
+  fi
+fi
 
   # Determine guest memory
 if [ -z "$memoryArgs" ]
@@ -268,7 +305,7 @@ echo
   machineArgs="-machine q35,accel=kvm,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
 
   cpuArgs="-cpu host,kvm=off"
-  smpArgs="-smp sockets=1,cores=$(grep -Pom1 'cpu cores.*\ \K([0-9]+)$' /proc/cpuinfo),threads=2" #Use all by default
+  smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
   coreArgs="$coreArgs -drive file=$image,id=disk"
   coreArgs="$coreArgs -bios $biosPath"
@@ -298,7 +335,7 @@ then
   echo "Run the same command again but with '-run' to actually pass these to qemu-system-x86_64"
   exit 0
 else
-  qemu-system-x86_64 $coreArgs $networkArgs $usbArgs $pciArgs
+  $taskset qemu-system-x86_64 $coreArgs $networkArgs $usbArgs $pciArgs
 fi
 
 #  ____ _                              
