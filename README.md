@@ -4,7 +4,7 @@
 
 I made this bash script to start my Win10 VM with automatically generated qemu arguments based on the guidelines I pass in.
 
-It saves me loads of time swapping between Linux and VM for gaming and I hope it can help someone else!
+It saves me loads of time swapping between Linux and VM for gaming and I hope it can help someone else.
 
 ## But what does it do
 
@@ -20,7 +20,7 @@ It starts a VM.. but:
   It can optionally pin the VM's qemu process to specific host CPU threads
     (Useful if I've set up core isolation in the host's boot parameters for improved VM performance)
 
-  When the VM shuts down (qemu exits) the script reprobes my nvidia drivers and brings my display-manager back to my login screen like the VM never happened. All without rebooting!
+  When the VM shuts down (qemu exits) the script reprobes my nvidia drivers and brings my display-manager back to my login screen with no reboot.
 
 ## What hosts and installs are supported?
 
