@@ -26,9 +26,12 @@ It starts a VM.. but:
 
 This is an ongoing discovery. This script has worked for me this year using Archlinux.
 
-  On Archlinux, it's worked on my two below hardware configurations:
-    - My now-retired Sabertooth X79 Motherboard (Intel i7 x3930K CPU)
-    - My current     Aorus x570 Motherboard     (AMD Ryzen 9 3900X CPU)
+On Archlinux, it's worked on my two below hardware configurations:
+
+  - My now-retired Sabertooth X79 Motherboard (Intel i7 x3930K CPU)
+  
+  - My current     Aorus x570 Motherboard     (AMD Ryzen 9 3900X CPU)
+    
 I'm sure it will work on many others however I worry a user's Distribution of Choice™ could easily affect the script's behavior. I'll keep testing this on other installs.
 
 # Why
