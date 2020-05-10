@@ -1,6 +1,7 @@
 # vfio
 
 ##What is this
+
 I made this bash script to start my Win10 VM with automatically generated qemu arguments based on the guidelines I pass in.
 
 It saves me loads of time swapping between Linux and VM for gaming and I hope it can help someone else!
@@ -22,6 +23,7 @@ It starts a VM.. but:
   When the VM shuts down (qemu exits) the script reprobes my nvidia drivers and brings my display-manager back to my login screen like the VM never happened. All without rebooting!
 
 ## What hosts and installs are supported?
+
 This is an ongoing discovery. This script has worked for me this year using Archlinux.
 
   On Archlinux, it's worked on my two below hardware configurations:
@@ -30,6 +32,7 @@ This is an ongoing discovery. This script has worked for me this year using Arch
 I'm sure it will work on many others however I worry a user's Distribution of Choice™ could easily affect the script's behavior. I'll keep testing this on other installs.
 
 # Why
+
 WINE and Proton have gotten me far for the past few years but sometimes I don't have the time to get a stubborn Title running,
   or worse, a title is known to nor work with Proton or WINE regardless.
   or WORSE, a title employs a driver-level Anti-Cheat solution (which you cannot just throw at WINE) which leaves a VM as the only option.
@@ -47,11 +50,13 @@ With a second GPU present the Looking Glass project could be implemented, leavin
 ### Arguments
 
 #### Always Required
+
 `-image /dev/zvol/zpoolName/windows,format=raw`
 
    If set - attaches it with the QEMU -drive parameter.
 
 #### Optional
+
 `-iso /path/to/a/diskimage.iso`
 
    If set - attaches it with the QEMU -cdrom parameter.
