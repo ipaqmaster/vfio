@@ -9,12 +9,15 @@ DRY=1 # Always dry unless flag '-run' is detected.
 # \__,_|\___| .__/|___/
 #           |_|        
 
-for dependency in ip dhclient qemu-system-x86_64 brctl dhclient taskset
+for dependency in ip dhclient qemu-system-x86_64 brctl dhclient taskset chrt
 do
   which $dependency >/dev/null 2>&1 || missing="$missing $dependency "
 done
-
-if [[ ! -z "$missing" ]];then echo -ne "Couldn't find these programs on your system:$missing\nPlease install the relevant packages or check your \$PATH." ; exit 1 ; fi
+if [[ ! -z "$missing" ]]
+then
+  echo -ne "Couldn't find these programs:$missing\nPlease install the relevant packages or check your \$PATH."
+  exit 1
+fi
 
 # _____                 _   _                 
 #|  ___|   _ _ __   ___| |_(_) ___  _ __  ___ 
@@ -216,7 +219,7 @@ do
     ;;
      -taskset|-TASKSET)
         tasksetThreads="$2"
-        taskset="taskset -c $tasksetThreads"
+        taskset="chrt -r 1 taskset -c $tasksetThreads"
         shift
     ;;
      -image|-IMAGE)
