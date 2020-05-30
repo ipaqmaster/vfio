@@ -2,6 +2,7 @@
 if [ "$EUID" -ne 0 ]; then echo "Please run me as root"; exit ; fi
 DRY=1 # Always dry unless flag '-run' is detected.
 
+
 #     _                
 #  __| | ___ _ __  ___ 
 # / _` |/ _ \ '_ \/ __|
@@ -61,6 +62,19 @@ function printHelp {
   exit 1
 }
 
+function do_cleanup {
+    # Undo our bridge
+  if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs stop ; fi
+  
+  consoleDrivers bind
+
+    # Make the console usable again if PCI was used.
+  if [ ! -z "$pciREGEX" ] && [[ $pciREGEX == *"NVIDIA"* ]]
+  then
+    restoreHostDisplay NVIDIA 
+  fi
+}
+
 function bridger {
     br=$1
    int=$2 ; intMAC=$(ip link show $int|grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+')
@@ -97,8 +111,8 @@ function consoleDrivers { # Toggles rendering to Ctrl+Alt+F[0-9]. Needs to be un
   if [ "$DRY" -eq "0" ]
   then 
     if [[ "$1" -eq 'bind' ]]; then bindstate='1';else bindstate='0';fi
-    echo $bindstate > /sys/class/vtconsole/vtcon0/bind
-    echo $bindstate > /sys/class/vtconsole/vtcon1/bind
+    #echo $bindstate > /sys/class/vtconsole/vtcon0/bind
+    #echo $bindstate > /sys/class/vtconsole/vtcon1/bind
     echo efi-framebuffer.0 > /sys/bus/platform/drivers/efi-framebuffer/$1
   fi
 }
@@ -130,7 +144,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   echo "PCI:"
   if ! lsmod|grep -q vfio_pci; then modprobe vfio-pci; fi
   if systemctl is-active display-manager >/dev/null && [ "$DRY" -eq "0" ]; then systemctl stop display-manager ; export dm="seen" ; fi
-  consoleDrivers unbind  # Required to avoid mmap issues
+  consoleDrivers unbind  # Required to avoid GPU mmap issues
 
   lspciOutput="$(lspci -nn)"
   PCIDevices="$(grep -E "$pciREGEX" <<<"$lspciOutput")"
@@ -173,8 +187,7 @@ function restoreHostDisplay {
   list="nvidia_drm nvidia_modeset nvidia" #Some drivers we must reprobe on the host
   for module in $list; do rmmod $module; done
   for module in $list; do modprobe $module; done
-  echo "Attempting to restart your display-manager..."
-  if  [ "$dm" == "seen" ]; then systemctl start display-manager ; fi
+  if  [ "$dm" == "seen" ]; then echo "Attempting to restart your display-manager..." ; systemctl start display-manager ; fi
 }
 
 #    _                  
@@ -242,6 +255,9 @@ done
 #|  __/| | |  __/_____|  _| | | | (_| | | | | |_ 
 #|_|   |_|  \___|     |_|   |_|_|\__, |_| |_|\__|
 #                                |___/
+
+  # Set a trap to run the cleanup function.
+trap do_cleanup  EXIT HUP INT TERM
 
 if [ $DRY -eq "1" ]; then echo "This is a DRY run. Please specify -run to actually run" ; echo ; fi
 
@@ -322,9 +338,9 @@ else
   networkArgs="$networkArgs -netdev user,id=network0" #NAT
 fi
 
-
 if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
 if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind+vfiobind ; consoleDrivers unbind ; fi
+
 
 if [ "$DRY" == "1" ];
 then
@@ -348,12 +364,4 @@ fi
 # \____|_|\___|\__,_|_| |_|\__,_| .__/ 
 #                               |_|    
 
-  # Undo our bridge
-if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs stop ; fi
-
-  # Make the console usable again if PCI was used.
-if [ ! -z "$pciREGEX" ] && [[ $pciREGEX == *"NVIDIA"* ]]
-then
-  restoreHostDisplay NVIDIA 
-  consoleDrivers bind
-fi
+do_cleanup
