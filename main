@@ -63,15 +63,19 @@ function printHelp {
 }
 
 function do_cleanup {
-    # Undo our bridge
-  if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs stop ; fi
-  
-  consoleDrivers bind
 
-    # Make the console usable again if PCI was used.
-  if [ ! -z "$pciREGEX" ] && [[ $pciREGEX == *"NVIDIA"* ]]
+  if [ "$DRY" -eq "0" ]
   then
-    restoreHostDisplay NVIDIA 
+      # Undo our bridge
+    if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs stop ; fi
+    
+    consoleDrivers bind
+  
+      # Make the console usable again if PCI was used.
+    if [ ! -z "$pciREGEX" ] && [[ $pciREGEX == *"NVIDIA"* ]]
+    then
+      restoreHostDisplay NVIDIA 
+    fi
   fi
 }
 
