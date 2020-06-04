@@ -70,11 +70,12 @@ function do_cleanup {
     if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs stop ; fi
     
     consoleDrivers bind
+    enumeratePCIs restorebind
   
       # Make the console usable again if PCI was used.
-    if [ ! -z "$pciREGEX" ] && [[ $pciREGEX == *"NVIDIA"* ]]
+    if [ ! -z "$pciREGEX" ]
     then
-      restoreHostDisplay NVIDIA 
+      if  [ "$dm" == "seen" ]; then echo "Attempting to restore your display-manager..." ; systemctl start display-manager ; fi
     fi
   fi
 }
@@ -129,16 +130,17 @@ function enumerateUSBs { # This only makes arguments
   
   while read USBDevice
   do
-     manufID="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$USBDevice| cut -d':' -f1)"
-    deviceID="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$USBDevice| cut -d':' -f2)"
+     vendorProduct="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$USBDevice)"
+     vendor="$( cut -d':' -f1 <<<"$vendorProduct")"
+    product="$( cut -d':' -f2 <<<"$vendorProduct")"
         Name="$(cut -d' ' -f7- <<<"$USBDevice")"
-    if [[ ! -z "$manufID" ]] && [[ ! -z "$deviceID" ]]
+    if [[ ! -z "$vendor" ]] && [[ ! -z "$product" ]]
     then
-      newUsbArg="-device usb-host,vendorid=0x$manufID,productid=0x$deviceID"
+      newUsbArg="-device usb-host,vendorid=0x$vendor,productid=0x$product"
         usbArgs="$usbArgs $newUsbArg"
-      printf "  Found $manufID:$deviceID as  :\t'$Name'\n    Added to USB Args as:\t$newUsbArg\n\n"
+      printf "  Matched $vendor:$product as  :\t'$Name'\n    Added to USB Args as:\t$newUsbArg\n\n"
     else
-    printf "Skipping: '$USBDevice' as there was an issue finding it."
+      printf "Skipping: '$USBDevice' as there was an issue finding it.\n"
     fi
   done <<<"$USBDevices"
 }
@@ -146,7 +148,9 @@ function enumerateUSBs { # This only makes arguments
 function enumeratePCIs { # This makes arguments and also unbinds from drivers. Optional vfio-pci rebinding.
 
   echo "PCI:"
+  declare -A -g deviceDrivers # Our cool array
   if ! lsmod|grep -q vfio_pci; then modprobe vfio-pci; fi
+  if [ "$?" -ne "0" ]; then echo "Could not modprove vfio-pci. Please fix this."; exit 1 ; fi
   if systemctl is-active display-manager >/dev/null && [ "$DRY" -eq "0" ]; then systemctl stop display-manager ; export dm="seen" ; fi
   consoleDrivers unbind  # Required to avoid GPU mmap issues
 
@@ -158,40 +162,56 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     echo "  Found $PCIDevice"
     buspath="0000:$(cut -d' ' -f1<<<$PCIDevice)"
 
-    if [[ $1 == *"unbind"* ]] && [ "$DRY" -eq "0" ]
+    vendorClass="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$PCIDevice )"
+    vendor="$( cut -d':' -f1 <<<"$vendorClass")"
+     class="$( cut -d':' -f2 <<<"$vendorClass")"
+
+    if ! [[ $@ == *"restorebind"* ]]
     then
-      echo "    Unbinding from it's driver" ; echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
-    elif [[ $1 == *"unbind"* ]] && [ "$DRY" -eq "1" ]
+      currentDriver="$(lspci -nn -k -d $vendorClass | grep -oP '(?<=driver in use:\ ).*')"
+      if ! [ -z $currentDriver ]
+      then
+        deviceDrivers["$vendorClass"]="$currentDriver" # Add it to our cool array
+        driver="${deviceDrivers["$vendorClass"]}"
+        echo "   [INFO] Driver is '$driver' and will be rebound on VM exit"
+      fi
+    fi
+      driver="${deviceDrivers["$vendorClass"]}"
+
+    if [[ $@ == *"unbind"* ]] && [ "$DRY" -eq "0" ]
+    then
+     echo "    Unbinding from it's driver" ; echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
+    elif [[ $@ == *"unbind"* ]] && [ "$DRY" -eq "1" ]
     then
       echo "    [DRY] Not unbinding it"
     fi
 
-    if [[ $1 == *"vfiobind"* ]] && [ "$DRY" -eq "0" ]
+    if [[ $@ == *"vfiobind"* ]] && [ "$DRY" -eq "0" ]
     then
-      vendor="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$PCIDevice| cut -d':' -f1)"
-       class="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$PCIDevice| cut -d':' -f2)"
       echo "    Binding it to vfio-pci" ; echo "0x$vendor 0x$class" > /sys/bus/pci/drivers/vfio-pci/new_id
       if [[ $? -ne "0" ]]; then echo "Rebind to vfio-pci failed.."; fi
       echo 1 > /sys/bus/pci/rescan
-    elif [[ $1 == *"vfiobind"* ]] && [ "$DRY" -eq "1" ]
+    elif [[ $@ == *"vfiobind"* ]] && [ "$DRY" -eq "1" ]
     then
       echo "    [DRY] Not binding to vfio-pci"
+      echo
+    elif [[ $@ == *"restorebind"* ]] && [ "$DRY" -eq "0" ]
+    then
+      if ! [ -z "$driver" ]
+      then
+        echo "    Rebinding $vendorClass to driver: $driver"
+	echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
+	echo "$buspath" > /sys/bus/pci/drivers/$driver/bind
+	if [ "$?" -eq "0" ]; then echo "$vendorClass successfully rebound to $driver" ; fi
+      fi
     fi
+
+
     pciArgs="$pciArgs -device vfio-pci,host=$buspath,id=hostdev$inc"
     inc=$((($inc+1)))
   done <<<"$PCIDevices"
   
   if [[ $var == *"vfiobind"* ]] ; then echo -ne "Here are the completed pciArgs:\n    $pciArgs"; fi
-}
-
-function restoreHostDisplay {
-  pciREGEX="$1" ; enumeratePCIs unbind
-
-  echo "Attempting to rebind nvidia drivers..."
-  list="nvidia_drm nvidia_modeset nvidia" #Some drivers we must reprobe on the host
-  for module in $list; do rmmod $module; done
-  for module in $list; do modprobe $module; done
-  if  [ "$dm" == "seen" ]; then echo "Attempting to restart your display-manager..." ; systemctl start display-manager ; fi
 }
 
 #    _                  
@@ -343,7 +363,7 @@ else
 fi
 
 if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
-if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind+vfiobind ; consoleDrivers unbind ; fi
+if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; consoleDrivers unbind ; fi
 
 
 if [ "$DRY" == "1" ];
@@ -361,11 +381,4 @@ else
   $taskset qemu-system-x86_64 $coreArgs $networkArgs $usbArgs $pciArgs
 fi
 
-#  ____ _                              
-# / ___| | ___  __ _ _ __  _   _ _ __  
-#| |   | |/ _ \/ _` | '_ \| | | | '_ \ 
-#| |___| |  __/ (_| | | | | |_| | |_) |
-# \____|_|\___|\__,_|_| |_|\__,_| .__/ 
-#                               |_|    
-
-do_cleanup
+#Cleanup will catch on Exit
