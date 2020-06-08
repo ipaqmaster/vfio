@@ -68,13 +68,13 @@ function do_cleanup {
       # Undo our bridge
     if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs stop ; fi
     
-    consoleDrivers bind
-    enumeratePCIs restorebind
   
-      # Make the console usable again if PCI was used.
+      # Make the console and PCI devices usable by the host again if they were bound to something else
     if [ ! -z "$pciREGEX" ]
     then
-      if  [ "$dm" == "seen" ]; then echo "Attempting to restore your display-manager..." ; systemctl start display-manager ; fi
+      consoleDrivers bind
+      enumeratePCIs restorebind
+      if  [ "$dm" == "seen" ]; then echo "Attempting to restore your display-manager..." ; systemctl start display-manager ; fi # start does nothing if already running so is safe to fire.
     fi
   fi
 }
