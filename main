@@ -356,7 +356,7 @@ echo
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
   coreArgs="$coreArgs -drive file=$image,id=disk"
   coreArgs="$coreArgs -bios $biosPath"
-    if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $isoPath" ; fi
+    if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
     if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no USB&PCI passthrough used.
 
 networkArgs="-device virtio-net,netdev=network0"
