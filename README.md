@@ -18,9 +18,9 @@ It starts a VM using qemu-system-x86_64 directly but it also:
   (Useful if the default NAT adapter doesn't cover your VM networking needs)
 
   It can optionally pin the VM's qemu process to specific host CPU threads
-    (Useful if I've set up core isolation in the host's boot parameters or have a cpu-set defined for improved VM performance)
+    (Useful if core isolation is configured in the host's boot parameters or have a cpu-set defined for improved VM performance)
 
-  When qemu exits (VM shutsdown) the script reprobes the nvidia drivers and brings the display-manager back to a login screen with no reboot.
+  When qemu exits (VM shuts down) the script reprobes the nvidia drivers and brings the display-manager back to a login screen with no reboot.
 
 ## What hosts and installs are supported?
 
