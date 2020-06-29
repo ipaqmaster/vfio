@@ -15,7 +15,7 @@ It starts a VM using qemu-system-x86_64 directly but it also:
   Automatically unbinds specified PCI devices from any driver attached to vfio-pci without having to put blacklists or early binds in the boot options.
 
   Optionally makes a network bridge on the host during VM runtime; Giving the VM its own IP, MAC and DHCP entry in your router. a 'real' [Layer 2] presence on your LAN.
-  (Useful if the default NAT adapter doesn't your VM networking needs)
+  (Useful if the default NAT adapter doesn't cover your VM networking needs)
 
   It can optionally pin the VM's qemu process to specific host CPU threads
     (Useful if I've set up core isolation in the host's boot parameters or have a cpu-set defined for improved VM performance)
