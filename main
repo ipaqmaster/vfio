@@ -243,7 +243,6 @@ do
     ;;
      -run|-RUN)
        DRY="0"
-       shift
     ;;
      -iso|-ISO)
         iso="$2"
@@ -278,8 +277,6 @@ done
 #|  __/| | |  __/_____|  _| | | | (_| | | | | |_ 
 #|_|   |_|  \___|     |_|   |_|_|\__, |_| |_|\__|
 #                                |___/
-
-
 
 if [ $DRY -eq "1" ]
 then
@@ -317,7 +314,7 @@ fi
   # Determine guest memory
 if [ -z "$memoryArgs" ]
 then
-  echo -ne "No -memory argument provided, will use half of host: "
+  echo -ne "-memory argument not provided, will use half of host: "
   totalHostMemoryKB=$(grep -oPm1 '(?!=MemTotal\:(\ )+)[0-9]+' /proc/meminfo)
   if [ ! -z "$totalHostMemoryKB" ]
   then
@@ -339,15 +336,16 @@ then
   defaultBiosPath="/usr/share/ovmf/x64/OVMF_CODE.fd"
   if [[ ! -f "$defaultBiosPath" ]]
   then
-    echo "No -bios argument provided and couldn't find default '$defaultBiosPath'. Please install OVMF or set your .fd file with the -bios argument"
+    echo "-bios argument not provided and couldn't find default '$defaultBiosPath'. Please install OVMF or set your .fd file with the -bios argument"
   else
-    echo "No -bios argument provided, using discovered default: $defaultBiosPath"
+    echo "-bios argument not provided, using discovered default: $defaultBiosPath"
     biosPath=$defaultBiosPath
   fi
 fi
 
 echo
-# Put QEMU arguments together
+
+# Put core QEMU arguments together
 
   machineArgs="-machine q35,accel=kvm,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
 
@@ -357,7 +355,7 @@ echo
   coreArgs="$coreArgs -drive file=$image,id=disk"
   coreArgs="$coreArgs -bios $biosPath"
     if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
-    if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no USB&PCI passthrough used.
+    if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga std" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
 
 networkArgs="-device virtio-net,netdev=network0"
 if [[ ! -z "$bridgeArgs" ]];
@@ -370,6 +368,12 @@ fi
 if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
 if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; consoleDrivers unbind ; fi
 
+# _____ _
+#|  ___| |_   _
+#| |_  | | | | |
+#|  _| | | |_| |
+#|_|   |_|\__, |
+#         |___/
 
 if [ "$DRY" == "1" ];
 then
@@ -379,8 +383,9 @@ then
   echo "Net : $networkArgs"
   echo "USB : $usbArgs"
   echo "PCI : $pciArgs"
+  echo "Bios: $smbiosArgs"
   if [ ! -z "$taskset" ]; then echo "Taskset parms: $taskset"; fi
-  echo "Run the same command again but with '-run' to actually pass these to qemu-system-x86_64"
+  echo -ne "\nRun the same command again but with '-run' to actually pass these to qemu-system-x86_64\n"
   exit 0
 else
   $taskset qemu-system-x86_64 $coreArgs $networkArgs $usbArgs $pciArgs
