@@ -288,7 +288,7 @@ else
 fi
 
   # Check for active IOMMU module.
-if ! lsmod |grep -qi iommu; then echo -ne "IOMMU isn't loaded?\n  For an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader.\n  If you're on an AMD machine instead add these two: 'iommu=pt iommu=1'\n\n  If you've already done this and rebooted, your host may not be compatible or some relevant bios settings could be disabled.\n  Feel free to ask about this in case it's a script fault.\n" ; exit 1; fi
+if [ -z "$(find /sys/class/iommu/ -type l)" ]; then echo -ne "IOMMU isn't loaded?\n  For an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader.\n  If you're on an AMD machine instead add these two: 'iommu=pt iommu=1'\n\n  If you've already done this and rebooted, your host may not be compatible or some relevant bios settings could be disabled.\n  Feel free to ask about this in case it's a script fault.\n" ; exit 1; fi
 
   # Determine Host cpu cores/threads and what the guest gets based on -taskset (if specified).
 hostThreads=$(grep -Pom1 'siblings.*\ \K([0-9]+)$' /proc/cpuinfo )
