@@ -395,7 +395,6 @@ then
   echo "Net : $networkArgs"
   echo "USB : $usbArgs"
   echo "PCI : $pciArgs"
-  echo "Bios: $smbiosArgs"
   if [ ! -z "$taskset" ]; then echo "Taskset parms: $taskset"; fi
   echo -ne "\nRun the same command again but with '-run' to actually pass these to qemu-system-x86_64\n"
   exit 0
