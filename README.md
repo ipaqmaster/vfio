@@ -12,7 +12,7 @@ It starts a VM using qemu-system-x86_64 directly but it also:
 
   Takes a regular expression of PCI and USB devices to pass to the VM when starting it.
 
-  Automatically unbinds specified PCI devices from any driver attached to vfio-pci without having to put blacklists or early binds in the boot options.
+  Automatically unbinds specified PCI devices from any driver and attaches them to the vfio-pci driver. (without any need for driver blocking or early vfio binds in the boot options)
 
   Optionally makes a network bridge on the host during VM runtime; Giving the VM its own IP, MAC and DHCP entry in your router. a 'real' [Layer 2] presence on your LAN.
   (Useful if the default NAT adapter doesn't cover your VM networking needs)
