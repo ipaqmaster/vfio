@@ -79,6 +79,14 @@ function do_cleanup {
   fi
 }
 
+function regexCleanup {
+  if [ -z "$@" ] ; then echo "No argument given to regexCleanup" ; return ; fi
+  REGEX="$@"
+  if grep -qE '^\|' <<< $1; then REGEX=${REGEX#?} ; fi
+  if grep -qE '\|$' <<< $1; then REGEX=${REGEX%?} ; fi
+  echo $REGEX
+}
+
 function bridger {
     br=$1
    int=$2 ; intMAC=$(ip link show $int|grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+')
@@ -365,6 +373,10 @@ else
   networkArgs="$networkArgs -netdev user,id=network0" #NAT
 fi
 
+  # Remove any leading/trailing pipes from the regex just in case.
+if [ ! -z "$usbREGEX" ]; then pciREGEX=$(regexCleanup "$usbREGEX") ; fi
+if [ ! -z "$pciREGEX" ]; then pciREGEX=$(regexCleanup "$pciREGEX") ; fi
+
 if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
 if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; consoleDrivers unbind ; fi
 
@@ -390,5 +402,6 @@ then
 else
   $taskset qemu-system-x86_64 $coreArgs $networkArgs $usbArgs $pciArgs
 fi
+
 
 #Cleanup will catch on Exit
