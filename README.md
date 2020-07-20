@@ -24,7 +24,9 @@ It starts a VM using qemu-system-x86_64 directly but it also:
 
 ## What hosts and installs are supported?
 
-This is an ongoing discovery. This script has worked for me this year using Archlinux.
+This is an ongoing discovery but as long as you have KVM support on the CPU, IOMMU on the motherboard (for best performance) and at least one GPU it seems to work well.
+
+This script has worked for me this year using Archlinux.
 I play Overwatch on it a lot and as for performance: If the game were presented to me without context I wouldn't be able to tell it's a VM. The fps and input latency has seriously been great.
 
 On Archlinux, it's worked on my two below hardware configurations however I'm certain other distros and hardware configurations will work too.
