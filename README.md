@@ -20,7 +20,7 @@ It starts a VM using qemu-system-x86_64 directly but it also:
   It can optionally pin the VM's qemu process to specific host CPU threads
     (Useful if core isolation is configured in the host's boot parameters or have a cpu-set defined for improved VM performance)
 
-  When qemu exits (VM shuts down) the script reprobes the nvidia drivers and brings the display-manager back to a login screen with no reboot.
+  When qemu exits (VM shuts down) the script rebinds any PCI devices back to whatever driver had them in the first place and brings the display-manager back to a login screen with no reboot.
 
 ## What hosts and installs are supported?
 
