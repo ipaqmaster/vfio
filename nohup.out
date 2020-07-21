@@ -1,0 +1,48 @@
+This will not be a dry run, please use sudo.
+This will not be a dry run, please use sudo.
+-taskset not specified, using all host cores: (12) with (24) threads.
+-bios argument not provided, using discovered default: /usr/share/ovmf/x64/OVMF_CODE.fd
+
+PCI:
+/home/jared/vfio/main: line 126: echo: write error: No such device
+  Matched: 09:00.0 VGA compatible controller [0300]: NVIDIA Corporation TU102 [GeForce RTX 2080 Ti] [10de:1e04] (rev a1)
+   [INFO] Driver is 'nvidia' and will be rebound on VM exit
+    Unbinding from it's driver
+    Binding it to vfio-pci
+  Matched: 09:00.1 Audio device [0403]: NVIDIA Corporation TU102 High Definition Audio Controller [10de:10f7] (rev a1)
+   [INFO] Driver is 'snd_hda_intel' and will be rebound on VM exit
+    Unbinding from it's driver
+    Binding it to vfio-pci
+  Matched: 09:00.2 USB controller [0c03]: NVIDIA Corporation TU102 USB 3.1 Host Controller [10de:1ad6] (rev a1)
+   [INFO] Driver is 'xhci_hcd' and will be rebound on VM exit
+    Unbinding from it's driver
+    Binding it to vfio-pci
+  Matched: 09:00.3 Serial bus controller [0c80]: NVIDIA Corporation TU102 USB Type-C UCSI Controller [10de:1ad7] (rev a1)
+   [INFO] Driver is 'nvidia-gpu' and will be rebound on VM exit
+    Unbinding from it's driver
+    Binding it to vfio-pci
+/home/jared/vfio/main: line 126: echo: write error: No such device
+Unable to init server: Could not connect: Connection refused
+WARNING: Image format was not specified for '/dev/zvol/jared-desktop/windows' and probing guessed raw.
+         Automatically detecting the format is dangerous for raw images, write operations on block 0 will be restricted.
+         Specify the 'raw' format explicitly to remove the restrictions.
+qemu-system-x86_64: warning: This family of AMD CPU doesn't support hyperthreading(2)
+Please configure -smp options properly or try enabling topoext feature.
+qemu-system-x86_64: -device vfio-pci,host=0000:09:00.0,id=hostdev0: Failed to mmap 0000:09:00.0 BAR 3. Performance may be slow
+gtk initialization failed
+/home/jared/vfio/main: line 126: echo: write error: No such device
+PCI:
+/home/jared/vfio/main: line 126: echo: write error: No such device
+  Matched: 09:00.0 VGA compatible controller [0300]: NVIDIA Corporation TU102 [GeForce RTX 2080 Ti] [10de:1e04] (rev a1)
+    Rebinding 10de:1e04 to driver: nvidia
+10de:1e04 successfully rebound to nvidia
+  Matched: 09:00.1 Audio device [0403]: NVIDIA Corporation TU102 High Definition Audio Controller [10de:10f7] (rev a1)
+    Rebinding 10de:10f7 to driver: snd_hda_intel
+10de:10f7 successfully rebound to snd_hda_intel
+  Matched: 09:00.2 USB controller [0c03]: NVIDIA Corporation TU102 USB 3.1 Host Controller [10de:1ad6] (rev a1)
+    Rebinding 10de:1ad6 to driver: xhci_hcd
+10de:1ad6 successfully rebound to xhci_hcd
+  Matched: 09:00.3 Serial bus controller [0c80]: NVIDIA Corporation TU102 USB Type-C UCSI Controller [10de:1ad7] (rev a1)
+    Rebinding 10de:1ad7 to driver: nvidia-gpu
+10de:1ad7 successfully rebound to nvidia-gpu
+Attempting to restore your display-manager...

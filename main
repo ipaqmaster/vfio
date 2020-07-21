@@ -122,8 +122,9 @@ function bridger {
 function consoleDrivers { # Toggles rendering to Ctrl+Alt+F[0-9]. Needs to be unhooked for GPU passthrough.
   if [ "$DRY" -eq "0" ]
   then 
-    if [[ "$1" -eq 'bind' ]]; then bindstate='1';else bindstate='0';fi
-    sleep 1 ; echo efi-framebuffer.0 > /sys/bus/platform/drivers/efi-framebuffer/bind
+    if [[ "$1" -eq 'bind' ]]; then bindBoolean="1"; bindState="$1" ; else bindBoolean="0" ; bindState="unbind" ; fi
+    for vtconsole in /sys/class/vtconsole/*; do echo $bindBoolean > $vtconsole/bind ; done
+    echo efi-framebuffer.0 > /sys/bus/platform/drivers/efi-framebuffer/$bindState
   fi
 }
 
@@ -157,7 +158,6 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   if ! lsmod|grep -q vfio_pci; then modprobe vfio-pci; fi
   if [ "$?" -ne "0" ]; then echo "Could not modprove vfio-pci. Please fix this."; exit 1 ; fi
   if systemctl is-active display-manager >/dev/null && [ "$DRY" -eq "0" ]; then systemctl stop display-manager ; export dm="seen" ; fi
-  consoleDrivers unbind  # Required to avoid GPU mmap issues
 
   lspciOutput="$(lspci -nn)"
   PCIDevices="$(grep -E "$pciREGEX" <<<"$lspciOutput")"
@@ -376,7 +376,7 @@ if [ ! -z "$usbREGEX" ]; then usbREGEX=$(regexCleanup "$usbREGEX") ; fi
 if [ ! -z "$pciREGEX" ]; then pciREGEX=$(regexCleanup "$pciREGEX") ; fi
 
 if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
-if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; consoleDrivers unbind ; fi
+if [ ! -z "$pciREGEX" ]; then consoleDrivers unbind ; enumeratePCIs unbind vfiobind ; fi # consoleDrivers is required to avoid GPU mmap issues 
 
 # _____ _
 #|  ___| |_   _
