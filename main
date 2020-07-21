@@ -123,9 +123,7 @@ function consoleDrivers { # Toggles rendering to Ctrl+Alt+F[0-9]. Needs to be un
   if [ "$DRY" -eq "0" ]
   then 
     if [[ "$1" -eq 'bind' ]]; then bindstate='1';else bindstate='0';fi
-    #echo $bindstate > /sys/class/vtconsole/vtcon0/bind
-    #echo $bindstate > /sys/class/vtconsole/vtcon1/bind
-    echo efi-framebuffer.0 > /sys/bus/platform/drivers/efi-framebuffer/$1
+    sleep 1 ; echo efi-framebuffer.0 > /sys/bus/platform/drivers/efi-framebuffer/bind
   fi
 }
 
@@ -374,7 +372,7 @@ else
 fi
 
   # Remove any leading/trailing pipes from the regex just in case.
-if [ ! -z "$usbREGEX" ]; then pciREGEX=$(regexCleanup "$usbREGEX") ; fi
+if [ ! -z "$usbREGEX" ]; then usbREGEX=$(regexCleanup "$usbREGEX") ; fi
 if [ ! -z "$pciREGEX" ]; then pciREGEX=$(regexCleanup "$pciREGEX") ; fi
 
 if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
