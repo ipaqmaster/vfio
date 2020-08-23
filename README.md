@@ -87,6 +87,11 @@ With a second GPU present the Looking Glass project could be implemented; leavin
    Set how much memory the VM gets for this run. Argument assumes megabytes unless you explicitly use a suffix like K, M, or G.
      If this argument isn't specified the default value is HALF of the host total.
 
+`-hugepages / -huge`
+
+   Try to mount (if not already) and allocate some hugepages based on the VM's total memory defined with -memory (or default).
+   If successful, qemu is given the arguments to use it. Gets unallocated after VM exit in the cleanup routine.
+
 `-bios '/path/to/that.fd'`
    An optional bios path.
      If not set, the script tries to use '/usr/share/ovmf/x64/OVMF_CODE.fd' if available.
