@@ -43,8 +43,12 @@ function printHelp {
   echo "  -bridge br0,enp4s0,tap0"
   echo "    If not specified, the default qemu NAT adapter is used."
   echo
-  echo "  -memory 8192M / -memory 8G"
-  echo "    Default is half that of system total memory"
+  echo "  -memory 8192M / -memory 8G / -mem xxxxM"
+  echo "    Set VM memory (Default is half of system total memory)"
+  echo
+  echo "  -hugepages / -huge"
+  echo "    Try to mount & allocate hugepages for qemu with the -mem specified."
+  echo "    (May want to specify -mem for this. Half of host ram may be too much.)"
   echo
   echo "  -USB 'SteelSeries|Keyboard|Xbox|1234:5678'"
   echo "    A regex for lsusb parsing. Can be anything that matches a specific device line"
@@ -62,19 +66,25 @@ function printHelp {
 }
 
 function do_cleanup {
-
+  # Try to undo any mess we've caused
   if [ "$DRY" -eq "0" ]
   then
-      # Undo our bridge
+      # Undo bridge if used
     if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs stop ; fi
     
   
-      # Make the console and PCI devices usable by the host again if they were bound to something else
+      # Rebind the console and PCI devices if they were rebound
     if [ ! -z "$pciREGEX" ]
     then
       consoleDrivers bind
       enumeratePCIs restorebind
-      if  [ "$dm" == "seen" ]; then echo "Attempting to restore your display-manager..." ; systemctl start display-manager ; fi # start does nothing if already running so is safe to fire.
+      if  [ "$dm" == "seen" ]; then echo "Attempting to restore your display-manager..." ; systemctl start display-manager ; fi # Start DM if seen before run.
+    fi
+
+    if [ "$HUGEPAGES" == "1" ] # Clean up hugepages
+    then
+      echo 0 > /proc/sys/vm/nr_hugepages # pack up
+      if [ "$hugeMount" == "self" ]; then umount $hugePath ; fi #umount if we mounted it
     fi
   fi
 }
@@ -239,6 +249,10 @@ do
        memoryArgs="$2"
        shift
     ;;
+     -huge|-hugepages)
+       HUGEPAGES="1"
+       hugePath="/dev/hugepages"
+    ;;
      -usb|-USB)
        usbREGEX="$2"
        shift
@@ -324,14 +338,48 @@ then
   totalHostMemoryKB=$(grep -oPm1 '(?!=MemTotal\:(\ )+)[0-9]+' /proc/meminfo)
   if [ ! -z "$totalHostMemoryKB" ]
   then
-    guestmemoryMB="$((($totalHostMemoryKB / 2)))K"
+    guestmemoryMB="$((($totalHostMemoryKB / 1024 / 2)))"
     echo -ne "$guestmemoryMB\n"
   else
     echo "Failed to find a default memory value for the guest."
   fi
 else
+  if  [[ "$memoryArgs" =~ 'G' ]]; then memoryArgs="$((($(grep -Eo '[0-9]+' <<< $memoryArgs) * 1024 )))"; fi # Convert to MB
   guestmemoryMB=$memoryArgs
 fi
+
+  # Hugepages?
+if [ $DRY -eq "0" ]
+then
+  if [  "$HUGEPAGES" == "1" ]
+  then
+    Hugepagesize="$(grep Hugepagesize /proc/meminfo |grep -oE '[0-9]+')" ; HugepagesizeMB="$((( $Hugepagesize / 1024 )))"
+    pagesRequired="$((($((($guestmemoryMB / $HugepagesizeMB))) + 1)))"
+    echo -ne "\nHugepages enabled for this run (Pagesize=${HugepagesizeMB}MB, $pagesRequired pages deployed. for the VM's ${guestmemoryMB}MB memory.)\n"
+    if grep -q "$hugePath" /proc/mounts
+    then
+      hugeMount=found
+    else
+      echo "/dev/hugepages not mounted, mounting."
+      mount -t hugetlbfs hugetlbfs -o mode=01770,gid=0 $hugePath && hugeMount=self # So we can umount later
+    fi
+    echo "$pagesRequired" > /proc/sys/vm/nr_hugepages ; echo -ne "Giving hugepages a moment to allocate...\n" ; sleep 3
+    HugePages_Total="$(grep HugePages_Total /proc/meminfo | grep -Eo '[0-9]+')"
+    if [[ "$HugePages_Total" -lt "$pagesRequired" ]]; then echo -ne "Error, couldn't allocate all required pages. Please free up memory or check your system.\n\t($HugePages_Total pages allocated out of $pagesRequired. With that the best we can do is: -mem $((($HugePages_Total * HugepagesizeMB))))\n"; exit 1 ; fi
+ fi
+else
+  echo "-hugepages acknowledged but dry run."
+fi
+
+if [[ "$hugeMount" =~ ^(found|self)$ ]] || [ $DRY -eq "1" ]
+then
+  hugeArgs="-mem-path $hugePath"
+else
+  echo "I was unable to find or manually set up the hugepage mount. It has not been enabled for this run."
+fi
+ 
+  
+
 
   # Make the bridge
 if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs start ; fi
@@ -361,7 +409,7 @@ echo
   coreArgs="$coreArgs -drive file=$image,id=disk"
   coreArgs="$coreArgs -bios $biosPath"
     if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
-    if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga std" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
+    if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
 
 networkArgs="-device virtio-net,netdev=network0"
 if [[ ! -z "$bridgeArgs" ]];
@@ -389,7 +437,7 @@ if [ "$DRY" == "1" ];
 then
   echo "---------------------"
   echo "Here are the completed args from this DRY run:"
-  echo "Core: $coreArgs"
+  echo "Core: $coreArgs $hugeArgs"
   echo "Net : $networkArgs"
   echo "USB : $usbArgs"
   echo "PCI : $pciArgs"
@@ -397,7 +445,7 @@ then
   echo -ne "\nRun the same command again but with '-run' to actually pass these to qemu-system-x86_64\n"
   exit 0
 else
-  $taskset qemu-system-x86_64 $coreArgs $networkArgs $usbArgs $pciArgs
+  $taskset qemu-system-x86_64 $coreArgs $hugeArgs $networkArgs $usbArgs $pciArgs
 fi
 
 
