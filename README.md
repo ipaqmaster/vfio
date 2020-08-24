@@ -39,9 +39,10 @@ While the VM runs and my host goes headless.. I can still SSH into it, mount ste
 
 # Why
 
-WINE and Proton have gotten me far for the past few years but sometimes I don't have the time to get a stubborn Title running or worse:
-  1. A title is known to nor work with Proton or WINE regardless.
-  2. A title employs a driver-level Anti-Cheat solution (which you cannot just throw at WINE) which leaves a VM as the next best option.
+WINE and Proton have gotten me far for the past few years but sometimes:
+  1. Lacking the time to help a stubborn title run,
+  2. A title is known not to work despite the efforts of Proton or Wine,
+  3. A title employs a driver-level Anti-Cheat solution (which you cannot just throw at WINE) which leaves a VM as the next best option.
 
 Modern IOMMU Support has made playing incompatible titles with ease.
 
