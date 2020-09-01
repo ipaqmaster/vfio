@@ -2,29 +2,31 @@
 
 ## What is this
 
-I made this bash script to start my Win10 VM with automatically generated qemu arguments based on the guidelines I pass in.
+A bash script that starts my Win10 VM directly with `qemu-system-x86_64` but automatically handles optional network bridging, hugepage allocation, USB passthrough arguments and PCI device rebinding + arguments (+ rebinding back to drivers when done) for minimizing my headaches.
 
-It saves me loads of time swapping between Linux and VM for gaming and I hope it can help someone else.
+It makes starting the Win10 vm quick and easy then sends me back to the lightdm login screen once it shuts down.
+Hoping the script helpful to others as I continiously tinker with it. Plan to add dual GPU support (one for host, one for guest) once I dust my old  PC off.
 
-## But what does it do
+## What does it do
 
 It starts a VM using qemu-system-x86_64 directly but it also:
 
-  Takes a regular expression of PCI and USB devices to pass to the VM when starting it.
+  Takes a regular expression of PCI and USB devices to pass to the VM when starting it. Generates qemu arguments for both.
 
-  Automatically unbinds specified PCI devices from any driver and attaches them to the vfio-pci driver. (without any need for driver blocking or early vfio binds in the boot options)
+  Automatically unbinds specified PCI devices from their current driver and attaches them to the vfio-pci driver. (without any need for driver blocking or early vfio binds in the boot options)
+  Then rebinds them to the driver they were originally used by after VM shutdown.
 
-  Optionally makes a network bridge on the host during VM runtime; Giving the VM its own IP, MAC and DHCP entry in your router. a 'real' [Layer 2] presence on your LAN.
-  (Useful if the default NAT adapter doesn't cover your VM networking needs)
-
+  Optionally makes a network bridge on the host during VM runtime; Giving the VM its own Layer 2 mac-address presence on the existing home LAN.
+  (Useful for setting a DHCP reservation, connecting to services running on the VM such as RDP, avoiding host-NAT nightmares)
+  
   It can optionally pin the VM's qemu process to specific host CPU threads
     (Useful if core isolation is configured in the host's boot parameters or have a cpu-set defined for improved VM performance)
-
-  When qemu exits (VM shuts down) the script rebinds any PCI devices back to whatever driver had them in the first place and brings the display-manager back to a login screen with no reboot.
+    
+  On VM exit it rebinds PCI devices back to their original drivers and starts your display-manager back up if it were running.
 
 ## What hosts and installs are supported?
 
-This is an ongoing discovery but as long as you have KVM support on the CPU, IOMMU on the motherboard (for best performance) and at least one GPU it seems to work well.
+This is an ongoing discovery but typically today's modern boards are going to be fine. As long as your motherboard has virtualization support and preferrably IOMMU on the motherboard for best performance it seems to work.
 
 This script has worked for me this year using Archlinux.
 I play Overwatch on it a lot and as for performance: If the game were presented to me without context I wouldn't be able to tell it's a VM. The fps and input latency has seriously been great.
@@ -49,19 +51,19 @@ Modern IOMMU Support has made playing incompatible titles with ease.
 
 With a second GPU present the Looking Glass project could be implemented; leaving the VM headless instead. (This flag is being worked on)
 
-# The script, arguments, and examples
+# The script, arguments, and examples 
 
-## Arguments this script will take [and script Gotchas]
+Arguments this script will take [and script Gotchas]
 
-### Arguments
+## Arguments
 
-#### Minimum argument requirements
+### Minimum argument requirements
 
 `-image /dev/zvol/zpoolName/windows,format=raw`
 
    If set - attaches a flatfile, partition, wholedisk or zvol to the VM with QEMU's -drive parameter.
 
-#### Optional
+### Optional
 
 `-iso /path/to/a/diskimage.iso`
 
@@ -95,7 +97,7 @@ With a second GPU present the Looking Glass project could be implemented; leavin
 
 `-bios '/path/to/that.fd'`
    An optional bios path.
-     If not set, the script tries to use '/usr/share/ovmf/x64/OVMF_CODE.fd' if available.
+     If not set, the script tries to use `/usr/share/ovmf/x64/OVMF_CODE.fd` if available.
 
 `-USB 'AT2020USB|SteelSeries|Ducky|Xbox|1425:5769'`
 
@@ -105,14 +107,14 @@ With a second GPU present the Looking Glass project could be implemented; leavin
        Any SteelSeries mouse,
        Any Xbox Controllers,
        Any Ducky brand keyboard.
-       A   USB device with ID `1425:5769`, whatever that may be.
+       A   USB device with ID `1425:5769`, whatever that may be. 
 
 `-PCI 'Realtek|NVIDIA|10ec:8168'`
    If set, the script enumerates `lspci` and generates arguments like the above. But also unbinds them from their current drivers (If any) and binds them to vfio-pci. Remembers what they were beforehand for rebinding after the VM shuts down.
      This example would catch any attached:
-       1. PCI devices by Realtek
-       2. NVIDIA cards (Including children of the GPU like the audio card and USB-C controller)
-       3. An example expicitly defined device with ID `10ec:8168`.
+       1. Any PCI devices by Realtek
+       2. Any NVIDIA cards (Including children of the GPU like the audio card and USB-C controller)
+       3. A   PCI device with ID `10ec:8168`.
 
 `-taskset 0,1,2,3,4,5`  / `-taskset 0,2,4,8`
    This taskset argument takes a comma delimited list of host threads and only lets the VM run on those.
@@ -124,25 +126,24 @@ With a second GPU present the Looking Glass project could be implemented; leavin
   Actually run. The script runs dry without this flagrun and tries to output as much helpful info as it can.
     Especially useful for testing PCI regexes without unbinding things first try, but good for general safety.
 
-### Useful Notes and Gotchas
-
-  - The absolute minimum requirement to get started is the `-image` and `iso` arguments. While OVMF is installed.
-    This starts the VM in a regular window where you can install Windows, VirtIO and NVIDIA drivers without worrying about PCI passthrough just yet.
-  - The default QEMU user-mode networking will also be used (NAT through desktop). This is fine but if you want to talk to the guest from the outside you'll want to try the `-bridge` flag.
-  - This script makes use of VirtIO devices, you may wish to install the drivers into the guest ahead of time unless you're passing through a USB/PCI network adapter.
-  - If you don't pass in any -usb or -pci arguments the VM will run in a window on your Linux desktop. Useful for initial installation.
-  - The CPU topology is 'host' by default, so the VM will copy your host's cpu model.
-      This script also passes through ALL host cores and threads by default, giving your VM all the host cores/threads to work with.
-      You can use -taskset to limit and set what threads the guest is given and permitted to run on.
+## Notes and Gotchas.
+  - If you don't set any `-usb` or `-pci` arguments the VM will run in a window on your desktop as is normal for Qemu.
+  - The absolute minimum requirement to get started is the `-image` and `iso` arguments with OVMF available, Install Windows and the VirtIO + NVIDIA drivers, then try passthrough in a fresh boot.
+  - The default networking mode is QEMU's user-mode networking (NAT through host IP).
+      It's fine but if you want to talk to the guest from the outside you'll want to consider using `-bridge`.
+  - This script makes use of VirtIO for networking. Unless you're passing through a USB/PCI network adapter, you'll want to install the VirtIO drivers into the guest. (e.g. Boot into the Windows ISO to install, then reboot the VM this time with the VirtIO driver iso attached)
+    - The CPU topology is 'host' by default. The VM will think it has the host's CPU model.
+  - By default the VM's CPU topology uses ALL host cores and HALF the host's total memory
+      You can use -taskset to cherrypick host threads for the VM to execute on, it will also set the VM's threadcount appropriately to match.
         This is very useful if the host has enough load to interupt the VM during normal operation.
-        If your host doesn't have the headroom for a gaming guestor the VM stutters; Consider using taskset for core isolation.
+        If your host doesn't have the cpu load headroom for a gaming guest or the VM experiences stuttering, Consider using -taskset to isolate guest cores.
         
-## Got any example runs?
+## Examples
 
-Note: I have omitted `-run` from all of these. Running without -run is a dry-run
+Note: I've omitted `-run` from these so they remain a dry-run.
 
 If you aren't ready to do any passthrough and just want to start the VM in a regular window (Installation, Drivers, etc.):
-  `sudo ./main -image /root/windows.img,format=raw -cdrom /data/Win10Latest.iso`
+  `sudo ./main -image /root/windows.img,format=raw -cdrom /root/Win10Latest.iso`
 
 If a host has been booted with isolated cores you can tell the script to pin the guest to those only:
   `sudo ./main -image /root/windows.img,format=raw -taskset 0,1,2,3,4,5`
