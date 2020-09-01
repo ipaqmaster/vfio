@@ -99,33 +99,30 @@ With a second GPU present the Looking Glass project could be implemented; leavin
 
 `-USB 'AT2020USB|SteelSeries|Ducky|Xbox|1425:5769'`
 
-   If set, the script enumerates lsusb with this regex and generates qemu arguments for them to run with.
+   If set, the script enumerates `lsusb` with this regex and generates qemu arguments for passing them through when the VM starts.
      This example would catch any attached:
        Any Audio Techinica AT2020 (USB Microphone+headphone DAC)
        Any SteelSeries mouse,
        Any Xbox Controllers,
        Any Ducky brand keyboard.
-       And an example explicitly defined device with ID 1425:5769.
+       A   USB device with ID `1425:5769`, whatever that may be.
 
 `-PCI 'Realtek|NVIDIA|10ec:8168'`
-   If set, the script enumerates lspci with this regex not only generating qemu arguments the matched PCI devices, but also rebinding them to the vfio-pci driver for you.
+   If set, the script enumerates `lspci` and generates arguments like the above. But also unbinds them from their current drivers (If any) and binds them to vfio-pci. Remembers what they were beforehand for rebinding after the VM shuts down.
      This example would catch any attached:
-       Any PCI devices by Realtek
-       Any NVIDIA cards (Including children of the GPU like the audio card and USB-C controller)
-       And an example expicitly defined device with ID 10ec:8168.
+       1. PCI devices by Realtek
+       2. NVIDIA cards (Including children of the GPU like the audio card and USB-C controller)
+       3. An example expicitly defined device with ID `10ec:8168`.
 
-`-taskset 0,1,2,3,4,5,6`  / `-taskset 0,2,4,8`
+`-taskset 0,1,2,3,4,5`  / `-taskset 0,2,4,8`
    This taskset argument takes a comma delimited list of host threads and only lets the VM run on those.
-   If you've configured core isolation on the host you'll want to specify this argument in conjunction."
-     This also calculates the cores/threads for the guest during a session.
-       e.g.
-       The argument: 0,1,2,3 would give the guest 2 cores of 2 threads each (4 total) only executing on those 4 specified threads of the host."
-       However     : 0,2,4   would give the guest 3 cores of 1 thread  each (3 total) only executing on those 3 specified threads of the host."
+   If you've configured any form of core isolation on the host you'll want to specify this argument too."
+     Using this also sets the VM's threadcount to match
+     ( Specifying "0,2,4,8" or "0,1,2,3,4,5" will start the VM with 4 or 6 threads respectively, and only execute on the numbered host threads )
 
 `-run`
-  Actually run. The script dry-runs without -run.
-    This is good for looking at what your USB/PCI regex argument will find.
-    Requiring this flag is also good for general safety.
+  Actually run. The script runs dry without this flagrun and tries to output as much helpful info as it can.
+    Especially useful for testing PCI regexes without unbinding things first try, but good for general safety.
 
 ### Useful Notes and Gotchas
 
