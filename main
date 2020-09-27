@@ -197,12 +197,24 @@ function enumerateUSBs { # This only makes arguments
 }
 
 function enumeratePCIs { # This makes arguments and also unbinds from drivers. Optional vfio-pci rebinding.
+  function gpuDetectedAndInUse {
+    echo "Video device $1 appears to be in use by the host (Display-manager, efi-framebuffer[virtual consoles] or otherwise)."
+    echo "At the current time I'll need to stop your display manager to continue."
+    echo "If you don't think the host is using this [RIGHT NOW] then there may be an error."
+    if systemctl is-active display-manager >/dev/null && ! isDry
+    then
+      echo "Stopping display-manager and unbinding console drivers in 5 seconds..." ; sleep 5
+      systemctl stop display-manager ; export dm="seen"
+    else
+      echo "Could not find a service for display-manager."
+    fi
+    consoleDrivers unbind && echo "Console drivers unbound, host may be headless"
+  }
 
   echo "PCI:"
   declare -A -g deviceDrivers # Our cool array
   if ! lsmod|grep -q vfio_pci; then modprobe vfio-pci; fi
   if [ "$?" -ne "0" ]; then echo "Could not modprove vfio-pci. Please fix this."; exit 1 ; fi
-  if systemctl is-active display-manager >/dev/null && ! isDry; then systemctl stop display-manager ; export dm="seen" ; fi
 
   lspciOutput="$(lspci -nn)"
   if [ -z "$pciREGEX" ]; then echo "pciREGEX variable is empty. Not sure how I was called? Panicing."; exit 1; fi 
@@ -212,7 +224,8 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   while read PCIDevice
   do
     echo "  Matched: $PCIDevice"
-    buspath="0000:$(cut -d' ' -f1<<<$PCIDevice)"
+    shortBuspath="$(cut -d' ' -f1<<<$PCIDevice)"
+    buspath="0000:$shortBuspath"
 
     vendorClass="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$PCIDevice )"
     vendor="$( cut -d':' -f1 <<<"$vendorClass")"
@@ -232,7 +245,8 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
 
     if [[ $@ == *"unbind"* ]] && ! isDry
     then
-     echo "    Unbinding from it's driver" ; echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
+      if ! isDry && grep -o '\[VGA controller\]' <<<$(lspci -vnnn -s "$buspath") ; then gpuDetectedAndInUse "$busPath[$vendorClass]" ; fi
+      echo "    Unbinding from it's driver" ; echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
     elif [[ $@ == *"unbind"* ]] && isDry
     then
       echo "    [DRY] Not unbinding it"
@@ -241,7 +255,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     if [[ $@ == *"vfiobind"* ]] && ! isDry
     then
       echo "    Binding it to vfio-pci" ; echo "0x$vendor 0x$class" > /sys/bus/pci/drivers/vfio-pci/new_id
-      if [[ $? -ne "0" ]]; then echo "Rebind to vfio-pci failed.."; fi
+      if [ $? -ne 0 ]; then echo "Rebind to vfio-pci failed.."; fi
       echo 1 > /sys/bus/pci/rescan
     elif [[ $@ == *"vfiobind"* ]] && isDry
     then
@@ -461,7 +475,7 @@ if [ ! -z "$usbREGEX" ]; then usbREGEX=$(regexCleanup "$usbREGEX") ; fi
 if [ ! -z "$pciREGEX" ]; then pciREGEX=$(regexCleanup "$pciREGEX") ; fi
 
 if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
-if [ ! -z "$pciREGEX" ]; then consoleDrivers unbind ; enumeratePCIs unbind vfiobind ; fi # consoleDrivers is required to avoid GPU mmap issues 
+if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; fi
 
 # _____ _
 #|  ___| |_   _
