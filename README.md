@@ -69,14 +69,18 @@ Arguments this script will take [and script Gotchas]
 
    If set - attaches an ISO with QEMU's -cdrom parameter.
 
-`-bridge br0,enp4s0,tap0`
+`-bridge br0,tap0	(Attach vm's tap0 to existing br0)`
+`-bridge br0,tap0,eth0	(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)`
 
    Takes a bridge name, interface and tap interface name as arguments.
-   Using this example it:
+   Using example 1:
+     1. Checks br0 exists (safety check)
+     2. Creates tap0 for the vm, and attaches it to the pre-existing br0.
+   Using example 2:
      1. Creates br0 + tap0.
-     2. Slaves tap0 to br0 with enp4s0.
-     3. Copies the mac from enp4s0 to the br0 (To preserve any DHCP Reservation in a network)
-     4. Removes any lingering IPs from enp4s0. (flush)
+     2. Slaves tap0 to br0 with eth0.
+     3. Copies the mac from eth0 to the br0 (To preserve any DHCP Reservation in a network)
+     4. Removes any lingering IPs from eth0. (flush)
      5. Brings all 3 ints up.
      6. And finally runs dhclient on br0.
 
@@ -151,6 +155,6 @@ If a host has been booted with isolated cores you can tell the script to pin the
   Very useful if a VM experiences stuttering from host load.
 
 An example run with passthrough could look like:
-  `sudo ./main -image /dev/zvol/poolName/windows,format=raw -bridge br0,enp4s0,tap0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'`
+  `sudo ./main -image /dev/zvol/poolName/windows,format=raw -bridge br0,eth0,tap0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'`
   This example would  would (if seen) pass all regex-matching USB and PCI devices and rebind the PCI devices if applicable.
 It would also provision network bridge br0 and attach tap0 to the bridge with your host interface. Then give tap0 to the VM.

@@ -40,8 +40,9 @@ function printHelp {
   echo "  -iso /path/to/a/diskimage.iso"
   echo "    If you're installing the OS for drivers you may wish to include this"
   echo
-  echo "  -bridge br0,enp4s0,tap0"
-  echo "    If not specified, the default qemu NAT adapter is used."
+  echo -e "  -bridge br0,tap0\t(Attach vm's tap0 to existing br0)"
+  echo -e "  -bridge br0,tap0,eth0\t(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)"
+  echo -e "    If not specified, the default qemu NAT adapter is used."
   echo
   echo "  -memory 8192M / -memory 8G / -mem xxxxM"
   echo "    Set VM memory (Default is half of system total memory)"
@@ -74,7 +75,7 @@ function do_cleanup {
   if ! isDry
   then
       # Undo bridge if used
-    if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs stop ; fi
+    if [[ ! -z "$bridgeArgs" ]]; then bridger stop $bridgeArgs ; fi
     
   
       # Rebind the console and PCI devices if they were rebound
@@ -103,38 +104,63 @@ function regexCleanup {
 
 function bridger {
   # Goal is to attach the vm's tap interface to a bridge. Creates the bridge if missing and attaches host int.
-    br=$1
-   int=$2 ; intMAC=$(ip link show $int|grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+')
+  mode=$1
+    br=$2
    tap=$3
-  mode=$4
+   int=$4 ; intMAC=$(ip link show $int|grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+')
+
 
   if [ "$mode" == "start" ] && ! isDry
   then
+    if [ ! -z "$int" ]
+    then
+      if ! ip link show $int >/dev/null 2>&1; then echo "$int defined but not found, not bridging." ; return 1 ; else intExists=1 ; fi
+    else
+      echo "host int not specified, will attach VM tap to existing bridge"
+      intExists=0
+    fi
+    if ip link show $tap >/dev/null 2>&1 ; then echo "$$tap already exists (use another name), not bridging." ; return 1 ; fi
     if grep -qs -E '^up$' /sys/class/net/$br/operstate
     then
-      echo "$br already exists and is up, going to attach to existing bridge."
-      exit 420
+      echo "$br exists and is up, will attach $tap to that."
+      bridgePreexists=1
+    else
+      echo "$br not found, will create for this VM run session"
+      bridgePreexists=0
     fi
-    if systemctl is-active NetworkManager >/dev/null ; then systemctl stop NetworkManager ; export nm="seen" ; fi
-    ip addr flush dev $int # Remove any IPs from the real int
-    if ! ip link show $br  >/dev/null 2>&1; then ip link add $br type bridge     ; fi
-    if   ip link show $int >/dev/null 2>&1; then ip link set dev $int master $br ; ip link set dev $br address $intMAC ; fi
-    if ! ip link show $tap >/dev/null 2>&1; then ip tuntap add $tap mode tap     ; ip link set $tap master $br ; fi
-    for i in $br $int $tap; do ip link set $i up; done
-    echo ------------------
-    echo "New bridge details:"
+
+    if [ $bridgePreexists -eq 0 ]
+    then
+      if systemctl is-active NetworkManager >/dev/null ; then systemctl stop NetworkManager ; export nm="seen" ; fi
+        # Create the bridge,        bring it up.
+      ip link add $br type bridge ; ip link set $br up
+        # Remove IPs from int,  attach int to bridge,              give bridge int's mac,                bring int up.
+      if [ $intExists = 1 ] ; then ip addr flush dev $int && ip link set dev $int master $br && ip link set dev $br address $intMAC ; ip link set $int up ; fi
+    fi
+
+      # Always create the tap,     attach tap to bridge,          bring tap up.
+    ip tuntap add $tap mode tap && ip link set $tap master $br && ip link set $tap up
+    echo '------------------'
+    echo "Bridge details:"
     brctl show $br
-    dhclient -v $br 2>&1|grep '^DHCP'
-    echo ------------------
+    if [ $bridgePreexists -eq 0 ]; then dhclient -v $br 2>&1|grep '^DHCP' ; else echo "Bridge already existed, not running dhclient on it" ; fi
+    echo '------------------'
   elif [ "$mode" == "start" ] && isDry
   then
     echo "[DRY] Bridge creation skipped"
   elif [ "$mode" == "stop" ] && ! isDry
   then
-    dhclient -r $br >/dev/null 2>&1 && echo "dhclient lease released and process ended."
-    for i in $tap $br; do ip link set $i down ; ip link del $i; done
-    if ! ip link show br0 >/dev/null 2>&1; then echo "Bridge is gone."; fi
-    if [ "$nm" == "seen" ]; then systemctl restart NetworkManager ; fi && echo "NetworkManager is now back."
+    if [ $bridgePreexists -eq 0 ]
+    then
+      echo "Cleaning up our bridge"
+      dhclient -r $br >/dev/null 2>&1 && echo "dhcp lease released and dhclient process ended."
+      for i in $tap $br; do ip link set $i down ; ip link del $i; done # Remove the tap and bridge
+      if ! ip link show br0 >/dev/null 2>&1; then echo "Bridge is gone."; fi
+    else
+      echo "We attached $tap to an existing bridge this run, removing $tap."
+      for i in $tap ; do ip link set $i down ; ip link del $i; done # Remove the tap
+    fi
+    if [ "$nm" == "seen" ]; then systemctl restart NetworkManager ; echo "NetworkManager restarted" ; fi
   fi
 }
 
@@ -391,7 +417,7 @@ fi
 
 
   # Make the bridge
-if [[ ! -z "$bridgeArgs" ]]; then bridger $bridgeArgs start ; fi
+if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
 
   # Evaulate biosPath
 if [[ -z "$biosPath" ]]
