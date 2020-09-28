@@ -70,22 +70,33 @@ Arguments this script will take [and script Gotchas]
    If set - attaches an ISO with QEMU's -cdrom parameter.
 
 `-bridge br0,tap0	(Attach vm's tap0 to existing br0)`
+
 `-bridge br0,tap0,eth0	(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)`
 
    Takes a bridge name, interface and tap interface name as arguments.
-   Using example 1:
-     1. Checks br0 exists (safety check)
-     2. Creates tap0 for the vm, and attaches it to the pre-existing br0.
-   Using example 2:
-     1. Creates br0 + tap0.
-     2. Slaves tap0 to br0 with eth0.
-     3. Copies the mac from eth0 to the br0 (To preserve any DHCP Reservation in a network)
-     4. Removes any lingering IPs from eth0. (flush)
-     5. Brings all 3 ints up.
-     6. And finally runs dhclient on br0.
-
-   If NetworkManager is found to be running it gets stopped during bridging and started back up after the bridge is destroyed once the VM shuts down.
    
+   Using example 1:
+   
+1. Checks br0 exists first.
+     
+2. Creates tap0 for the vm as usual and attaches it to the pre-existing br0 (No dhclient, assumes pre-existing bridge is configured)
+     
+3. During cleanup unslaves and deletes tap0.
+     
+Using example 2:
+   
+1. Creates br0 + tap0.
+     
+2. Slaves tap0 and eth0 to br0.
+     
+3. Copies the mac from eth0 to the br0 (To preserve any DHCP Reservation in a network)
+     
+4. Removes any lingering IPs from eth0. (flush)
+     
+5. Brings all 3 up and runs dhclient on br0
+     
+6. During cleanup, unslaves the interface and deletes br0+tap0. Restores NetworkManager if it were found to be running.
+     
    If this argument isn't specified the default qemu NAT adapter will be used
     (NAT may be desirable for some setups)
      
@@ -115,10 +126,14 @@ Arguments this script will take [and script Gotchas]
 
 `-PCI 'Realtek|NVIDIA|10ec:8168'`
    If set, the script enumerates `lspci` and generates arguments like the above. But also unbinds them from their current drivers (If any) and binds them to vfio-pci. Remembers what they were beforehand for rebinding after the VM shuts down.
-     This example would catch any attached:
-       1. Any PCI devices by Realtek
-       2. Any NVIDIA cards (Including children of the GPU like the audio card and USB-C controller)
-       3. A   PCI device with ID `10ec:8168`.
+   
+This example would catch any attached:
+     
+1. Any PCI devices by Realtek
+       
+2. Any NVIDIA cards (Including children of the GPU like the audio card and USB-C controller)
+       
+3. A   PCI device with ID `10ec:8168`.
 
 `-taskset 0,1,2,3,4,5`  / `-taskset 0,2,4,8`
    This taskset argument takes a comma delimited list of host threads and only lets the VM run on those.
