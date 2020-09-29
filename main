@@ -1,7 +1,6 @@
 #!/bin/bash
 DRY=1 # Assume dry, '-run' flag will flip the bit later.
 
-
 #     _                
 #  __| | ___ _ __  ___ 
 # / _` |/ _ \ '_ \/ __|
@@ -32,11 +31,12 @@ function printHelp {
   echo 
   echo "Valid example arguments:"
   echo
-  echo "[REQUIRED]"
-  echo "  -image /dev/zvol/zpool/windows,format=raw"
+  echo "[Required for most use-cases]"
+  echo "  -image /dev/zvol/zpool/windows"
+  echo "  -imageformat/-format raw/qcow/vdi/etc"
   echo "    A file or blockdevice to give the guest. Complete with it's [Qemu recognised] format"
   echo
-  echo "[OPTIONAL]"
+  echo "[For first-install or liveCD booting]"
   echo "  -iso /path/to/a/diskimage.iso"
   echo "    If you're installing the OS for drivers you may wish to include this"
   echo
@@ -331,6 +331,11 @@ do
         image="$2"
         shift
     ;;
+     -imageformat|-format)
+        imageFormat="$2"
+        shift
+    ;;
+
      --help|-help|--HELP|-HELP)
         printHelp
     ;;
@@ -457,7 +462,8 @@ echo
   cpuArgs="-cpu host,kvm=off"
   smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
-  coreArgs="$coreArgs -drive file=$image,id=disk"
+  if [ ! -z "$image" ] && [ ! -z "$imageFormat" ]; then image="$image,format=$imageFormat" ; fi
+  if [ ! -z "$image" ] ; then coreArgs="$coreArgs -drive file=$image,id=disk" ; else echo "You have not specified a disk image with -image, this VM will have no disk this run" ; fi
   coreArgs="$coreArgs -bios $biosPath"
     if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
     if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.

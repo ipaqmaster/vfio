@@ -57,17 +57,18 @@ Arguments this script will take [and script Gotchas]
 
 ## Arguments
 
-### Minimum argument requirements
+### [Required arguments for most use-cases]
 
-`-image /dev/zvol/zpoolName/windows,format=raw`
+`-image /dev/zvol/zpoolName/windows -imageformat raw`
 
    If set - attaches a flatfile, partition, wholedisk or zvol to the VM with QEMU's -drive parameter.
+   -imageformat is optional
 
-### Optional
+### Usually optional
 
 `-iso /path/to/a/diskimage.iso`
 
-   If set - attaches an ISO with QEMU's -cdrom parameter.
+   If set - attaches an ISO with QEMU's -cdrom parameter. Good for liveCDs or installing an OS to a specified -image.
 
 `-bridge br0,tap0	(Attach vm's tap0 to existing br0)`
 
