@@ -137,14 +137,15 @@ This example would catch any attached:
 3. A   PCI device with ID `10ec:8168`.
 
 `-taskset 0,1,2,3,4,5`  / `-taskset 0,2,4,8`
-   This taskset argument takes a comma delimited list of host threads and only lets the VM run on those.
-   If you've configured any form of core isolation on the host you'll want to specify this argument too."
-     Using this also sets the VM's threadcount to match
-     ( Specifying "0,2,4,8" or "0,1,2,3,4,5" will start the VM with 4 or 6 threads respectively, and only execute on the numbered host threads )
+   The taskset argument will take the threads you give it and only lets the VM execute on those threads. It also creates only that many threads on the VM. (6 and 4 in the examples respectively)
+   This can significantly reduce latency if the guestis having trouble, even if you haven't configured any host pinning.
 
 `-run`
   Actually run. The script runs dry without this flagrun and tries to output as much helpful info as it can.
     Especially useful for testing PCI regexes without unbinding things first try, but good for general safety.
+
+`-colortest`
+  A quick terminal color test then exits.
 
 ## Notes and Gotchas.
   - If you don't set any `-usb` or `-pci` arguments the VM will run in a window on your desktop as is normal for Qemu.
