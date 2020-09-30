@@ -512,7 +512,7 @@ then
   echo -e "Net :\n${colors[blue]} $networkArgs${colors[white]}"
   echo -e "USB :\n${colors[blue]} $usbArgs${colors[white]}"
   echo -e "PCI :\n${colors[blue]}$pciArgs${colors[white]}"
-  if [ ! -z "$taskset" ]; then echo "Taskset parms: $taskset"; fi
+  if [ ! -z "$taskset" ]; then echo -e "Taskset params to invoke qemu: ${colors[blue]}$taskset${colors[white]}"; fi
   echo -ne "\nRun the script with the same arguments again and include ${colors[red]}-run${colors[white]} to actually pass these to qemu-system-x86_64\n"
   exit 0
 else
