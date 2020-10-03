@@ -132,7 +132,7 @@ function bridger {
     then
       if ! ip link show $int >/dev/null 2>&1; then echo "$int defined but not found, not bridging." ; return 1 ; else intExists=1 ; fi
     else
-      echo "host int not specified, will attach VM tap to existing bridge"
+      echo "Host int not specified, will attach VM tap to existing bridge"
       intExists=0
     fi
     if ip link show $tap >/dev/null 2>&1 ; then echo "$$tap already exists (use another name), not bridging." ; return 1 ; fi
@@ -162,7 +162,7 @@ function bridger {
     echo '------------------'
   elif [ "$mode" == "start" ] && isDry
   then
-    echo -e "${colors[green]}[DRY] acknowledged -bridge${colors[white]}"
+    echo -e "${colors[green]}-bridge\t\tacknowledged [DRY]${colors[white]}"
   elif [ "$mode" == "stop" ] && ! isDry
   then
     if [ $bridgePreexists -eq 0 ]
@@ -318,6 +318,10 @@ do
        bridgeArgs="$(sed 's/,/ /g' <<<$2)"
        shift
     ;;
+    -nonet|-NONET)
+       noNet=1
+       shift
+    ;;
      -memory|-MEMORY|-MEM|-mem)
        memoryArgs="$2"
        shift
@@ -395,11 +399,11 @@ hostThreads=$(grep -Pom1 'siblings.*\ \K([0-9]+)$' /proc/cpuinfo )
 if [ -z "$taskset" ]
 then
   guestCores=$hostCores ; if [ ! -z $hostIsThreaded ]; then guestThreads=2; else guestThreads=1; fi
-  echo -e "${colors[yellow]}-taskset not specified, guest gets full host CPU:\t${colors[white]} ($hostCores) with ($hostThreads) threads."
+  echo -e "${colors[yellow]}-taskset\tnot specified, guest gets full host CPU:\t${colors[white]}($hostCores) with ($hostThreads) threads."
 else
   if grep -qE '^([0-9]|,)+$' <<< $tasksetThreads
   then
-	  echo -e "${colors[green]}-taskset specified. Guest will run on host CPU threads:\t${colors[white]}$tasksetThreads"
+	  echo -e "${colors[green]}-taskset\tspecified, Guest will run on host CPU threads:\t${colors[white]}$tasksetThreads"
     OLDIFS="$IFS" ; IFS=, ; tasksetCount=$(echo $tasksetThreads| wc -w) ; IFS="$OLDIFS"
       # Check if specified -taskset thread count is divisible by 2. Use hyperthreading/smt if supported
     if (( $tasksetCount % 2 == 0 )) && [ "$hostIsThreaded" == "1" ] ; then guestCores=$((( $tasksetCount / 2 ))) ; guestThreads=2; else guestCores=$tasksetCount ; guestThreads=1 ; fi
@@ -415,7 +419,7 @@ then
   if [ ! -z "$totalHostMemoryKB" ]
   then
     guestmemoryMB="$((($totalHostMemoryKB / 1024 / 2)))"
-    echo -e "${colors[yellow]}-memory argument missing, will use half host total:\t${colors[white]} ${guestmemoryMB} MB${colors[white]}"
+    echo -e "${colors[yellow]}-memory\t\tnot specified, will use half host total:\t${colors[white]}${guestmemoryMB} MB${colors[white]}"
   else
     echo "${colors[red]}Failed to find a default memory value for the guest.${colors[white]}"
   fi
@@ -430,9 +434,9 @@ then
   defaultBiosPath="/usr/share/ovmf/x64/OVMF_CODE.fd"
   if [[ ! -f "$defaultBiosPath" ]]
   then
-    echo -e "${colors[red]}-bios argument missing and couldn't find default '$defaultBiosPath'. Please install OVMF or set your .fd file with the -bios argument"
+    echo -e "${colors[red]}-bios\t\tnot specified and couldn't find default '$defaultBiosPath'. Please install OVMF or set your .fd file with the -bios argument"
   else
-    echo -e "${colors[green]}-bios argument missing, using discovered default:\t${colors[white]}${defaultBiosPath}"
+    echo -e "${colors[green]}-bios\t\tnot specified, using discovered default:\t${colors[white]}${defaultBiosPath}"
     biosPath=$defaultBiosPath
   fi
 fi
@@ -456,7 +460,7 @@ then
   if [[ "$HugePages_Total" -lt "$pagesRequired" ]]; then echo -ne "Error, couldn't allocate all required pages. Please free up memory or check your system.\n\t($HugePages_Total pages allocated out of $pagesRequired. With that the best we can do is: -mem $((($HugePages_Total * HugepagesizeMB))))\n"; exit 1 ; fi
 elif isDry
   then
-  echo -e "${colors[green]}[DRY] acknowledged -hugepages${colors[white]}"
+  echo -e "${colors[green]}-hugepages\tacknowledged [DRY]${colors[white]}"
 fi
 
 if [  "$HUGEPAGES" == "1" ] && [ -z "$hugeMount" ] && ! isDry
@@ -467,8 +471,6 @@ fi
   # Make the bridge
 if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
 
-echo
-
 # Put core QEMU arguments together
 
   machineArgs="-machine q35,accel=kvm,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
@@ -477,7 +479,7 @@ echo
   smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
   if [ ! -z "$image" ] && [ ! -z "$imageFormat" ]; then image="$image,format=$imageFormat" ; fi
-  if [ ! -z "$image" ] ; then coreArgs="$coreArgs -drive file=$image,id=disk" ; else echo -e "${colors[yellow]}You have not specified a disk image with -image, this VM will have no disk this run${colors[white]}\n" ; fi
+  if [ ! -z "$image" ] ; then coreArgs="$coreArgs -drive file=$image,id=disk" ; else echo -e "${colors[yellow]}-image\tnot specified. This VM will run diskless.${colors[white]}\n" ; fi
   coreArgs="$coreArgs -bios $biosPath"
     if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
     if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
@@ -485,9 +487,15 @@ echo
 networkArgs="-device virtio-net,netdev=network0"
 if [[ ! -z "$bridgeArgs" ]];
 then
-  networkArgs="$networkArgs -netdev tap,id=network0,ifname=tap0,script=no,downscript=no" #BRIDGE
+  networkArgs="$networkArgs -netdev tap,id=network0,ifname=tap0,script=no,downscript=no" # Bridge
+  echo -e "${colors[green]}-bridge\t\tspecified, VM will be bridged to the host with a tap adapter.${colors[white]}"
+elif [[ ! -z "$noNet" ]]
+then
+  networkArgs=""
+  echo -e "${colors[green]}-nonet specified, there will be no virtual networking for the VM this run.${colors[white]}"
 else
-  networkArgs="$networkArgs -netdev user,id=network0" #NAT
+  networkArgs="$networkArgs -netdev user,id=network0" # NAT
+  echo -e "${colors[yellow]}No network arguments (-bridge/-nonet) specified, using a NAT adapter for VM networking this run.${colors[white]}"
 fi
 
   # Remove any leading/trailing pipes from the regex just in case.
@@ -509,9 +517,9 @@ then
   echo "---------------------"
   echo "Here are the completed args from this DRY run:"
   echo -e "Core:\n${colors[blue]} $coreArgs $hugeArgs${colors[white]}"
-  echo -e "Net :\n${colors[blue]} $networkArgs${colors[white]}"
-  echo -e "USB :\n${colors[blue]} $usbArgs${colors[white]}"
-  echo -e "PCI :\n${colors[blue]}$pciArgs${colors[white]}"
+  if [ ! -z "$networkArgs" ]; then echo -e "Net :\n${colors[blue]} $networkArgs${colors[white]}" ; fi
+  if [ ! -z "$usbArgs" ] ; then echo -e "USB :\n${colors[blue]} $usbArgs${colors[white]}" ; fi
+  if [ ! -z "$pciArgs" ] ; then echo -e "PCI :\n${colors[blue]}$pciArgs${colors[white]}" ; fi
   if [ ! -z "$taskset" ]; then echo -e "Taskset params to invoke qemu: ${colors[blue]}$taskset${colors[white]}"; fi
   echo -ne "\nRun the script with the same arguments again and include ${colors[red]}-run${colors[white]} to actually pass these to qemu-system-x86_64\n"
   exit 0
