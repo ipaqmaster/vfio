@@ -399,7 +399,7 @@ then
 else
   if grep -qE '^([0-9]|,)+$' <<< $tasksetThreads
   then
-    echo -e "${colors[green]}-taskset specified. Guest will run on host CPU threads:\t$tasksetThreads${colors[white]}"
+	  echo -e "${colors[green]}-taskset specified. Guest will run on host CPU threads:\t${colors[white]}$tasksetThreads"
     OLDIFS="$IFS" ; IFS=, ; tasksetCount=$(echo $tasksetThreads| wc -w) ; IFS="$OLDIFS"
       # Check if specified -taskset thread count is divisible by 2. Use hyperthreading/smt if supported
     if (( $tasksetCount % 2 == 0 )) && [ "$hostIsThreaded" == "1" ] ; then guestCores=$((( $tasksetCount / 2 ))) ; guestThreads=2; else guestCores=$tasksetCount ; guestThreads=1 ; fi
@@ -432,7 +432,7 @@ then
   then
     echo -e "${colors[red]}-bios argument missing and couldn't find default '$defaultBiosPath'. Please install OVMF or set your .fd file with the -bios argument"
   else
-    echo -e "${colors[green]}-bios argument missing, using discovered default:\t${colors[white]} ${defaultBiosPath}"
+    echo -e "${colors[green]}-bios argument missing, using discovered default:\t${colors[white]}${defaultBiosPath}"
     biosPath=$defaultBiosPath
   fi
 fi
