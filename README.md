@@ -112,44 +112,54 @@ Using example 2:
    If successful, qemu is given the arguments to use it. Gets unallocated after VM exit in the cleanup routine.
 
 `-bios '/path/to/that.fd'`
-   An optional bios path.
-     If not set, the script tries to use `/usr/share/ovmf/x64/OVMF_CODE.fd` if available.
+
+   An optional bios path. If not set the script will try `/usr/share/ovmf/x64/OVMF_CODE.fd` if available.
 
 `-USB 'AT2020USB|SteelSeries|Ducky|Xbox|1425:5769'`
 
    If set, the script enumerates `lsusb` with this regex and generates qemu arguments for passing them through when the VM starts.
-     This example would catch any attached:
-       Any Audio Techinica AT2020 (USB Microphone+headphone DAC)
-       Any SteelSeries mouse,
-       Any Xbox Controllers,
-       Any Ducky brand keyboard.
-       A   USB device with ID `1425:5769`, whatever that may be. 
+   
+This example would catch any:
+     
+1. Audio-Techinica AT2020 (USB Microphone+headphone DAC)
+
+2. SteelSeries mouse,
+
+3. Xbox Controllers,
+
+4. Ducky brand keyboard.
+
+5. A USB device with ID `1425:5769`, whatever that may be.
 
 `-PCI 'Realtek|NVIDIA|10ec:8168'`
+
    If set, the script enumerates `lspci` and generates arguments like the above. But also unbinds them from their current drivers (If any) and binds them to vfio-pci. Remembers what they were beforehand for rebinding after the VM shuts down.
    
-This example would catch any attached:
+This example would catch any:
      
-1. Any PCI devices by Realtek
+1. PCI devices by Realtek
        
-2. Any NVIDIA cards (Including children of the GPU like the audio card and USB-C controller)
+2. NVIDIA cards (Including children of the GPU like the audio card and USB-C controller)
        
-3. A   PCI device with ID `10ec:8168`.
+3. A PCI device with ID `10ec:8168`.
 
 `-taskset 0,1,2,3,4,5`  / `-taskset 0,2,4,8`
+
    The taskset argument will take the threads you give it and only lets the VM execute on those threads. It also creates only that many threads on the VM. (6 and 4 in the examples respectively)
    This can significantly reduce latency if the guestis having trouble, even if you haven't configured any host pinning.
 
 `-run`
+
   Actually run. The script runs dry without this flagrun and tries to output as much helpful info as it can.
     Especially useful for testing PCI regexes without unbinding things first try, but good for general safety.
 
 `-colortest`
+
   A quick terminal color test then exits.
 
 ## Notes and Gotchas.
-  - If you don't set any `-usb` or `-pci` arguments the VM will run in a window on your desktop as is normal for Qemu.
-  - The absolute minimum requirement to get started is the `-image` and `iso` arguments with OVMF available, Install Windows and the VirtIO + NVIDIA drivers, then try passthrough in a fresh boot.
+  - If you don't set any `-usb` or `-pci` arguments the VM will run in a window on your desktop as is normal for Qemu. Useful for testing the VM actually boots, installing OSes or using liveCDs.
+  - The absolute minimum requirement to get started is the `-image` and `-iso` arguments with OVMF available. You can install an OS, VirtIO+Nvidia drivers if needed, and have it ready for a passthrough on the next boot.
   - The default networking mode is QEMU's user-mode networking (NAT through host IP).
       It's fine but if you want to talk to the guest from the outside you'll want to consider using `-bridge`.
   - This script makes use of VirtIO for networking. Unless you're passing through a USB/PCI network adapter, you'll want to install the VirtIO drivers into the guest. (e.g. Boot into the Windows ISO to install, then reboot the VM this time with the VirtIO driver iso attached)
