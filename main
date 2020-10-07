@@ -310,10 +310,16 @@ while [ $# -gt 0 ]
 do
   case "$1" in
     -colortest|-colourtest)
-       echo "Ok, doing a color test then exiting..."
+       echo -e "${colors[green]}Ok, printing a color test then exiting...${colors[white]}"
        for i in $(sort <<< ${!colors[@]}) ; do echo -e "Test for: ${colors[$i]}$i ${colors[white]}" ; done
-       exit 0
+       exit $?
     ;;
+    -iommugroups|-iommugrouping)
+      echo -e "${colors[green]}Ok, printing IOMMU Groups then exiting...${colors[white]}"
+      iommuDir="/sys/kernel/iommu_groups";
+      if [ -d $iommuDir ]; then for g in `ls -1v $iommuDir`; do echo "IOMMU Group $g"; for d in $iommuDir/$g/devices/* ; do echo -e "${colors[cyan]}\t$(lspci -nns ${d##*/})${colors[white]}"; done; done ; else echo "Couldn't find $iommuDir" ; fi
+      exit $?
+    ;; 
     -bridge|-BRIDGE)
        bridgeArgs="$(sed 's/,/ /g' <<<$2)"
        shift
