@@ -143,7 +143,7 @@ This example would catch any:
        
 3. A PCI device with ID `10ec:8168`.
 
-`-taskset 0,1,2,3,4,5`  / `-taskset 0,2,4,8`
+`-taskset 0,1,2,3,4,5` / `-taskset 0,2,4,8`
 
    The taskset argument will take the threads you give it and only lets the VM execute on those threads. It also creates only that many threads on the VM. (6 and 4 in the examples respectively)
    This can significantly reduce latency if the guestis having trouble, even if you haven't configured any host pinning.
@@ -156,6 +156,10 @@ This example would catch any:
 `-colortest`
 
   A quick terminal color test then exits.
+
+`-iommugroups` / `-iommugrouping`
+
+  Prints IOMMU groupings if available then exists.
 
 ## Notes and Gotchas.
   - If you don't set any `-usb` or `-pci` arguments the VM will run in a window on your desktop as is normal for Qemu. Useful for testing the VM actually boots, installing OSes or using liveCDs.
