@@ -39,43 +39,52 @@ fi
 # 
 
 function printHelp {
-  echo "This script is designed to make my single-gpu vfio mucking about easier."
-  echo "It's gone over so many iterations the past few months, I it's useful to others."
-  echo 
-  echo "Valid example arguments:"
-  echo
-  echo "[Required for most use-cases]"
-  echo "  -image /dev/zvol/zpool/windows"
-  echo "  -imageformat/-format raw/qcow/vdi/etc"
-  echo "    A file or blockdevice to give the guest. Complete with it's [Qemu recognised] format"
-  echo
-  echo "[For first-install or liveCD booting]"
-  echo "  -iso /path/to/a/diskimage.iso"
-  echo "    If you're installing the OS for drivers you may wish to include this"
-  echo
-  echo -e "  -bridge br0,tap0\t(Attach vm's tap0 to existing br0)"
-  echo -e "  -bridge br0,tap0,eth0\t(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)"
-  echo -e "    If not specified, the default qemu NAT adapter is used."
-  echo
-  echo "  -memory 8192M / -memory 8G / -mem xxxxM"
-  echo "    Set VM memory (Default is half of system total memory)"
-  echo
-  echo "  -hugepages / -huge"
-  echo "    Try to mount & allocate hugepages for qemu with the -mem specified."
-  echo "    (May want to specify -mem for this. Half of host ram may be too much.)"
-  echo
-  echo "  -USB 'SteelSeries|Keyboard|Xbox|1234:5678'"
-  echo "    A regex for lsusb parsing. Can be anything that matches a specific device line"
-  echo
-  echo "  -PCI 'Realtek|NVIDIA|10ec:8168'"
-  echo "    A regex for lspci parsing. Example will take any nvidia and Realtek cards"
-  echo
-  echo "  -taskset 0,1,2,3,4,5,6 / -taskset 0,2,4,8"
-  echo "    A comma delimited list of host threads the Guest is allowed to execute on."
-  echo "    (Setting this also shapes the guest CPU topology to match.)"
-  echo "    If you've configured core isolation on the host, this is the argument for you!"
-  echo
-  echo "Please see the README.md file for more information about the flags."
+  echo -e "This script exists to make various vfio activity less convoluted. Among other use-cases"
+  echo -e "such as LiveCD usage, testing if drives boot, PXE imaging, or any thing else with optional PCI passthrough."
+  echo -e "I hope somebody finds it useful."
+  echo -e 
+  echo -e "Valid example arguments: [${colors[blue]}There's more in the README.md!${colors[white]}]"
+  echo -e
+  echo -e "[Required for most use-cases]"
+  echo -e "  ${colors[cyan]}-image /dev/zvol/zpool/windows${colors[white]}"
+  echo -e "  ${colors[cyan]}-imageformat${colors[white]}/-format raw/qcow/vdi/etc${colors[white]}"
+  echo -e "    A file or blockdevice to give the guest. Complete with it's [Qemu recognised] format"
+  echo -e
+  echo -e "[For first-install or liveCD booting]"
+  echo -e "  ${colors[cyan]}-iso /path/to/a/diskimage.iso${colors[white]}"
+  echo -e "    If you're installing the OS for drivers you may wish to include this"
+  echo -e
+  echo -e "[Extra useful flags and for vm runtime]"
+  echo -e "  ${colors[cyan]}-iommugroups / -iommugrouping${colors[white]}"
+  echo -e "    (Try to) Print IOMMU Groups then exit. Useful for the -PCI arg."
+  echo -e
+  echo -e "  ${colors[cyan]}-bridge br0,tap0${colors[white]}\t(Attach vm's tap0 to existing br0)"
+  echo -e "  ${colors[cyan]}-bridge br0,tap0,eth0${colors[white]}\t(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)"
+  echo -e "    If no network options are specified the default qemu NAT adapter will be used."
+
+  echo -e "  ${colors[cyan]}-nonet${colors[white]}"
+  echo -e "    If specified, the VM is not given a network adapter. Useful if you're passing a USB or PCI network card."
+  echo -e
+  echo -e
+  echo -e "  ${colors[cyan]}-memory 8192M${colors[white]} / ${colors[cyan]}-memory 8G${colors[white]} / ${colors[cyan]}-mem xxxxM${colors[white]}"
+  echo -e "    Set VM memory (Default is half of system total memory)"
+  echo -e
+  echo -e "  ${colors[cyan]}-hugepages${colors[white]} / ${colors[cyan]}-huge${colors[white]}"
+  echo -e "    Try to mount & allocate hugepages for qemu with the -mem specified."
+  echo -e "    (May want to specify -mem for this. Half of host ram may be too much.)"
+  echo -e
+  echo -e "  ${colors[cyan]}-USB 'SteelSeries|Keyboard|Xbox|1234:5678'${colors[white]}"
+  echo -e "    A regex for lsusb parsing. Can be anything that matches a specific device line"
+  echo -e
+  echo -e "  ${colors[cyan]}-PCI 'Realtek|NVIDIA|10ec:8168'${colors[white]}"
+  echo -e "    A regex for lspci parsing. Example will take any nvidia and Realtek cards, plus any device with the ID."
+  echo -e
+  echo -e "  ${colors[cyan]}-taskset 0,1,2,3,4,5,6 / ${colors[cyan]}-taskset 0,2,4,8${colors[white]}"
+  echo -e "    A comma delimited list of host threads the Guest is allowed to execute on."
+  echo -e "    (Setting this also shapes the guest CPU topology to match.)"
+  echo -e "    If you've configured core isolation on the host, this is the argument for you!"
+  echo -e
+  echo -e "Please see the README.md file for more information about the flags."
   exit 1
 }
 
