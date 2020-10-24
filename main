@@ -21,7 +21,7 @@ colors[white]="\e[97m"
 # \__,_|\___| .__/|___/
 #           |_|        
 
-for dependency in ip dhclient qemu-system-x86_64 brctl dhclient taskset chrt
+for dependency in brctl chrt dhclient dhclient ip qemu-system-x86_64 taskset tr
 do
   which $dependency >/dev/null 2>&1 || missing="$missing $dependency "
 done
@@ -73,10 +73,10 @@ function printHelp {
   echo -e "    Try to mount & allocate hugepages for qemu with the -mem specified."
   echo -e "    (May want to specify -mem for this. Half of host ram may be too much.)"
   echo -e
-  echo -e "  ${colors[cyan]}-USB 'SteelSeries|Keyboard|Xbox|1234:5678'${colors[white]}"
+  echo -e "  ${colors[cyan]}-usb 'SteelSeries|Keyboard|Xbox|1234:5678'${colors[white]}"
   echo -e "    A regex for lsusb parsing. Can be anything that matches a specific device line"
   echo -e
-  echo -e "  ${colors[cyan]}-PCI 'Realtek|NVIDIA|10ec:8168'${colors[white]}"
+  echo -e "  ${colors[cyan]}-pci 'Realtek|NVIDIA|10ec:8168'${colors[white]}"
   echo -e "    A regex for lspci parsing. Example will take any nvidia and Realtek cards, plus any device with the ID."
   echo -e
   echo -e "  ${colors[cyan]}-taskset 0,1,2,3,4,5,6 / ${colors[cyan]}-taskset 0,2,4,8${colors[white]}"
@@ -88,13 +88,14 @@ function printHelp {
   exit 1
 }
 
-function isDry {
-if [ $DRY -eq 1 ] ; then return 0 ; else return 1 ; fi
-}
+ # Check if script is in dry mode.
+function isDry { if [ $DRY -eq 1 ] ; then return 0 ; else return 1 ; fi ; }
 
-function do_cleanup {
+ # Read numeric value from meminfo
+function readMeminfo { if [ ! -z "$1" ]; then grep -m1 "$1" /proc/meminfo | grep -Eo '[0-9]+'; fi ; }
+
   # Try to undo any mess we've caused
-
+function do_cleanup {
   echo -ne "${colors[white]}"
   if ! isDry
   then
@@ -181,7 +182,7 @@ function bridger {
       for i in $tap $br; do ip link set $i down ; ip link del $i; done # Remove the tap and bridge
       if ! ip link show br0 >/dev/null 2>&1; then echo -e "${colors[green]}Bridge removed.${colors[white]}"; fi
     else
-      echo -e "${colors[green]}We only attached $tap to an existing bridge this run, removing $tap."
+      echo -e "${colors[green]}We only attached $tap to an existing bridge this run, removing $tap.${colors[white]}"
       for i in $tap ; do ip link set $i down ; ip link del $i; done && echo -e "${colors[green]}$tap removed.${colors[white]}" # Remove the tap
     fi
     if [ "$nm" == "seen" ]; then systemctl restart NetworkManager ; echo -e "${colors[green]}NetworkManager restarted.${colors[white]}" ; fi
@@ -249,7 +250,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   inc=0
   while read PCIDevice
   do
-    echo -e "  Matched: ${colors[blue]}$PCIDevice"
+    echo -e "  Matched: ${colors[blue]}$PCIDevice${colors[white]}"
     shortBuspath="$(cut -d' ' -f1<<<$PCIDevice)"
     buspath="0000:$shortBuspath"
 
@@ -317,7 +318,7 @@ if [[ -z "$@" ]] ; then echo "No args seen. Printing help" ; printHelp ; fi
 
 while [ $# -gt 0 ]
 do
-  case "$1" in
+  case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
     -colortest|-colourtest)
        echo -e "${colors[green]}Ok, printing a color test then exiting...${colors[white]}"
        for i in $(sort <<< ${!colors[@]}) ; do echo -e "Test for: ${colors[$i]}$i ${colors[white]}" ; done
@@ -329,46 +330,46 @@ do
       if [ -d $iommuDir ]; then for g in `ls -1v $iommuDir`; do echo "IOMMU Group $g"; for d in $iommuDir/$g/devices/* ; do echo -e "${colors[cyan]}\t$(lspci -nns ${d##*/})${colors[white]}"; done; done ; else echo "Couldn't find $iommuDir" ; fi
       exit $?
     ;; 
-    -bridge|-BRIDGE)
+    -bridge)
        bridgeArgs="$(sed 's/,/ /g' <<<$2)"
        shift
     ;;
-    -nonet|-NONET)
+    -nonet)
        noNet=1
        shift
     ;;
-     -memory|-MEMORY|-MEM|-mem)
+     -memory|-mem)
        memoryArgs="$2"
        shift
     ;;
      -huge|-hugepages)
        HUGEPAGES="1"
     ;;
-     -usb|-USB)
+     -usb)
        usbREGEX="$2"
        shift
     ;;
-     -pci|-PCI)
+     -pci)
         pciREGEX="$2"
        shift
     ;;
-     -run|-RUN)
+     -run)
        DRY="0"
     ;;
-     -iso|-ISO)
+     -iso)
         iso="$2"
         shift
     ;;
-     -bios|-BIOS)
+     -bios)
         biosPath="$2"
         shift
     ;;
-     -taskset|-TASKSET)
+     -taskset)
         tasksetThreads="$2"
         taskset="chrt -r 1 taskset -c $tasksetThreads"
         shift
     ;;
-     -image|-IMAGE)
+     -image)
         image="$2"
         shift
     ;;
@@ -377,7 +378,7 @@ do
         shift
     ;;
 
-     --help|-help|--HELP|-HELP)
+     --help|-help)
         printHelp
     ;;
      *) /bin/echo "Unknown argument $1"
@@ -430,7 +431,7 @@ fi
   # Determine guest memory
 if [ -z "$memoryArgs" ]
 then
-  totalHostMemoryKB=$(grep -oPm1 '(?!=MemTotal\:(\ )+)[0-9]+' /proc/meminfo)
+  totalHostMemoryKB="$(readMeminfo MemTotal)"
   if [ ! -z "$totalHostMemoryKB" ]
   then
     guestmemoryMB="$((($totalHostMemoryKB / 1024 / 2)))"
@@ -460,7 +461,7 @@ fi
 hugePath="/dev/hugepages"
 if [  "$HUGEPAGES" == "1" ] && ! isDry
 then
-  Hugepagesize="$(grep Hugepagesize /proc/meminfo |grep -oE '[0-9]+')" ; HugepagesizeMB="$((( $Hugepagesize / 1024 )))"
+  Hugepagesize="$(readMeminfo Hugepagesize)" ; HugepagesizeMB="$((( $Hugepagesize / 1024 )))"
   pagesRequired="$((($((($guestmemoryMB / $HugepagesizeMB))) + 1)))"
   echo -ne "\nHugepages enabled for this run (Pagesize=${HugepagesizeMB}MB, $pagesRequired pages deployed. for the VM's ${guestmemoryMB}MB memory.)\n"
   if grep -q "$hugePath" /proc/mounts
@@ -470,9 +471,24 @@ then
     echo "/dev/hugepages not mounted, attempting to mount it."
     mount -t hugetlbfs hugetlbfs -o mode=01770,gid=0 $hugePath && hugeMount=self && hugeArgs="-mem-path $hugePath" # So we can umount later
   fi
-  echo "$pagesRequired" > /proc/sys/vm/nr_hugepages ; echo -ne "Giving hugepages a moment to allocate...\n" ; sleep 3
-  HugePages_Total="$(grep HugePages_Total /proc/meminfo | grep -Eo '[0-9]+')"
-  if [[ "$HugePages_Total" -lt "$pagesRequired" ]]; then echo -ne "Error, couldn't allocate all required pages. Please free up memory or check your system.\n\t($HugePages_Total pages allocated out of $pagesRequired. With that the best we can do is: -mem $((($HugePages_Total * HugepagesizeMB))))\n"; exit 1 ; fi
+  echo 3 > /proc/sys/vm/drop_caches && echo -ne "Memory cache dropped for hugepages...\n"
+  echo -ne "running compat_memory... " ; echo 1 > /proc/sys/vm/compact_memory && echo -ne "compat_memory run for hugepages...\n"
+  echo "$pagesRequired" > /proc/sys/vm/nr_hugepages ; echo -ne "Giving hugepages a moment to allocate."
+  while [ $(readMeminfo HugePages_Free) -lt $pagesRequired ]
+  do
+   echo -ne '.'
+   count=$((($count+1))) ; if [ $count -gt 5 ]; then break; fi
+   sleep 1
+  done ; echo '' # Newline
+
+  HugePages_Free="$(readMeminfo HugePages_Free)"
+  if [[ "$(readMeminfo HugePages_Free)" -lt "$pagesRequired" ]]
+  then
+    echo -ne "${colors[red]}Error, couldn't allocate all required pages. Please free up memory or check your system.${colors[white]}\n\t${colors[yellow]}(${colors[white]}$HugePages_Free ${colors[yellow]}pages free out of ${colors[white]}$pagesRequired${colors[yellow]} requested. With that the highest value achieved right now is:${colors[white]} -mem $((($HugePages_Free * HugepagesizeMB)))${colors[yellow]})${colors[white]}\n"
+    exit 1
+  else
+    echo "Hugepages ready."
+  fi
 elif isDry
   then
   echo -e "${colors[green]}-hugepages\tacknowledged [DRY]${colors[white]}"
@@ -495,7 +511,7 @@ if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
   if [ ! -z "$image" ] && [ ! -z "$imageFormat" ]; then image="$image,format=$imageFormat" ; fi
   if [ ! -z "$image" ] ; then coreArgs="$coreArgs -drive file=$image,id=disk" ; else echo -e "${colors[yellow]}-image\tnot specified. This VM will run diskless.${colors[white]}\n" ; fi
-  coreArgs="$coreArgs -bios $biosPath"
+  coreArgs="$coreArgs -drive if=pflash,format=raw,unit=0,readonly,file=$biosPath"
     if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
     if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
 

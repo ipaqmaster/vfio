@@ -33,12 +33,6 @@ I play Overwatch on it a lot and as for performance: If the game were presented 
 
 On Archlinux, it's worked on my two below hardware configurations however I'm certain other distros and hardware configurations will work too.
 
-  - My now-retired Sabertooth X79 Motherboard (Intel i7 x3930K CPU)
-  
-  - My current     Aorus x570 Motherboard     (AMD Ryzen 9 3900X CPU)
-
-While the VM runs and my host goes headless.. I can still SSH into it, mount steamapps over NFS, X11 forward programs and more. So it's been good.
-
 # Why
 
 WINE and Proton have gotten me far for the past few years but sometimes:
@@ -115,7 +109,7 @@ Using example 2:
 
    An optional bios path. If not set the script will try `/usr/share/ovmf/x64/OVMF_CODE.fd` if available.
 
-`-USB 'AT2020USB|SteelSeries|Ducky|Xbox|1425:5769'`
+`-usb 'AT2020USB|SteelSeries|Ducky|Xbox|1425:5769'`
 
    If set, the script enumerates `lsusb` with this regex and generates qemu arguments for passing them through when the VM starts.
    
@@ -131,7 +125,7 @@ This example would catch any:
 
 5. A USB device with ID `1425:5769`, whatever that may be.
 
-`-PCI 'Realtek|NVIDIA|10ec:8168'`
+`-pci 'Realtek|NVIDIA|10ec:8168'`
 
    If set, the script enumerates `lspci` and generates arguments like the above. But also unbinds them from their current drivers (If any) and binds them to vfio-pci. Remembers what they were beforehand for rebinding after the VM shuts down.
    
