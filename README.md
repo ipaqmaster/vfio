@@ -157,9 +157,10 @@ This example would catch any:
 
 ## Notes and Gotchas.
   - If you don't set any `-usb` or `-pci` arguments the VM will run in a window on your desktop as is normal for Qemu. Useful for testing the VM actually boots, installing OSes or using liveCDs.
+    - If you don't have $DISPLAY set the guest will run headless but the terminal will attach to the guest's serial. Make sure you put something like console=ttyS0 in the guest boot arguments if you actually want to interact with it while headless.
   - The absolute minimum requirement to get started is the `-image` and `-iso` arguments with OVMF available. You can install an OS, VirtIO+Nvidia drivers if needed, and have it ready for a passthrough on the next boot.
   - The default networking mode is QEMU's user-mode networking (NAT through host IP).
-      It's fine but if you want to talk to the guest from the outside you'll want to consider using `-bridge`.
+    - It's fine but if you want to talk to the guest from the outside you'll want to consider using `-bridge`.
   - This script makes use of VirtIO for networking. Unless you're passing through a USB/PCI network adapter, you'll want to install the VirtIO drivers into the guest. (e.g. Boot into the Windows ISO to install, then reboot the VM this time with the VirtIO driver iso attached)
     - The CPU topology is 'host' by default. The VM will think it has the host's CPU model.
   - By default the VM's CPU topology uses ALL host cores and HALF the host's total memory
