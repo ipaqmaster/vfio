@@ -4,6 +4,7 @@ echo "" # Professional padding
 
 # Some colors
 declare -A colors
+colors[none]="\e[0m"
 colors[red]="\e[31m"
 colors[green]="\e[32m"
 colors[yellow]="\e[33m"
@@ -43,43 +44,43 @@ function printHelp {
   echo -e "such as LiveCD usage, testing if drives boot, PXE imaging, or any thing else with optional PCI passthrough."
   echo -e "I hope somebody finds it useful."
   echo -e 
-  echo -e "Valid example arguments: [${colors[blue]}There's more in the README.md!${colors[white]}]"
+  echo -e "Valid example arguments: [${colors[blue]}There's more in the README.md!${colors[none]}]"
   echo -e
   echo -e "[Required for most use-cases]"
-  echo -e "  ${colors[cyan]}-image /dev/zvol/zpool/windows${colors[white]}"
-  echo -e "  ${colors[cyan]}-imageformat${colors[white]}/-format raw/qcow/vdi/etc${colors[white]}"
+  echo -e "  ${colors[cyan]}-image /dev/zvol/zpool/windows${colors[none]}"
+  echo -e "  ${colors[cyan]}-imageformat${colors[none]}/-format raw/qcow/vdi/etc${colors[none]}"
   echo -e "    A file or blockdevice to give the guest. Complete with it's [Qemu recognised] format"
   echo -e
   echo -e "[For first-install or liveCD booting]"
-  echo -e "  ${colors[cyan]}-iso /path/to/a/diskimage.iso${colors[white]}"
+  echo -e "  ${colors[cyan]}-iso /path/to/a/diskimage.iso${colors[none]}"
   echo -e "    If you're installing the OS for drivers you may wish to include this"
   echo -e
   echo -e "[Extra useful flags and for vm runtime]"
-  echo -e "  ${colors[cyan]}-iommugroups / -iommugrouping${colors[white]}"
+  echo -e "  ${colors[cyan]}-iommugroups / -iommugrouping${colors[none]}"
   echo -e "    (Try to) Print IOMMU Groups then exit. Useful for the -PCI arg."
   echo -e
-  echo -e "  ${colors[cyan]}-bridge br0,tap0${colors[white]}\t(Attach vm's tap0 to existing br0)"
-  echo -e "  ${colors[cyan]}-bridge br0,tap0,eth0${colors[white]}\t(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)"
+  echo -e "  ${colors[cyan]}-bridge br0,tap0${colors[none]}\t(Attach vm's tap0 to existing br0)"
+  echo -e "  ${colors[cyan]}-bridge br0,tap0,eth0${colors[none]}\t(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)"
   echo -e "    If no network options are specified the default qemu NAT adapter will be used."
 
-  echo -e "  ${colors[cyan]}-nonet${colors[white]}"
+  echo -e "  ${colors[cyan]}-nonet${colors[none]}"
   echo -e "    If specified, the VM is not given a network adapter. Useful if you're passing a USB or PCI network card."
   echo -e
   echo -e
-  echo -e "  ${colors[cyan]}-memory 8192M${colors[white]} / ${colors[cyan]}-memory 8G${colors[white]} / ${colors[cyan]}-mem xxxxM${colors[white]}"
+  echo -e "  ${colors[cyan]}-memory 8192M${colors[none]} / ${colors[cyan]}-memory 8G${colors[none]} / ${colors[cyan]}-mem xxxxM${colors[none]}"
   echo -e "    Set VM memory (Default is half of system total memory)"
   echo -e
-  echo -e "  ${colors[cyan]}-hugepages${colors[white]} / ${colors[cyan]}-huge${colors[white]}"
+  echo -e "  ${colors[cyan]}-hugepages${colors[none]} / ${colors[cyan]}-huge${colors[none]}"
   echo -e "    Try to mount & allocate hugepages for qemu with the -mem specified."
   echo -e "    (May want to specify -mem for this. Half of host ram may be too much.)"
   echo -e
-  echo -e "  ${colors[cyan]}-usb 'SteelSeries|Keyboard|Xbox|1234:5678'${colors[white]}"
+  echo -e "  ${colors[cyan]}-usb 'SteelSeries|Keyboard|Xbox|1234:5678'${colors[none]}"
   echo -e "    A regex for lsusb parsing. Can be anything that matches a specific device line"
   echo -e
-  echo -e "  ${colors[cyan]}-pci 'Realtek|NVIDIA|10ec:8168'${colors[white]}"
+  echo -e "  ${colors[cyan]}-pci 'Realtek|NVIDIA|10ec:8168'${colors[none]}"
   echo -e "    A regex for lspci parsing. Example will take any nvidia and Realtek cards, plus any device with the ID."
   echo -e
-  echo -e "  ${colors[cyan]}-taskset 0,1,2,3,4,5,6 / ${colors[cyan]}-taskset 0,2,4,8${colors[white]}"
+  echo -e "  ${colors[cyan]}-taskset 0,1,2,3,4,5,6 / ${colors[cyan]}-taskset 0,2,4,8${colors[none]}"
   echo -e "    A comma delimited list of host threads the Guest is allowed to execute on."
   echo -e "    (Setting this also shapes the guest CPU topology to match.)"
   echo -e "    If you've configured core isolation on the host, this is the argument for you!"
@@ -96,7 +97,7 @@ function readMeminfo { if [ ! -z "$1" ]; then grep -m1 "$1" /proc/meminfo | grep
 
   # Try to undo any mess we've caused
 function do_cleanup {
-  echo -ne "${colors[white]}"
+  echo -ne "${colors[none]}"
   if ! isDry
   then
       # Undo bridge if used
@@ -117,7 +118,7 @@ function do_cleanup {
       if [ "$hugeMount" == "self" ]; then umount $hugePath ; fi #umount if we mounted it
     fi
   fi
-  echo -e "\n${colors[green]}Cleanup complete.${colors[white]}"
+  echo -e "\n${colors[green]}Cleanup complete.${colors[none]}"
 }
 
 function regexCleanup {
@@ -168,24 +169,24 @@ function bridger {
     ip tuntap add $tap mode tap && ip link set $tap master $br && ip link set $tap up
     echo '------------------'
     echo -ne "Bridge details:\n\n" ; brctl show $br ; echo
-    if [ $bridgePreexists -eq 0 ]; then echo "Running dhclient on $br..." ; dhclient -v $br 2>&1|grep '^DHCPACK' ; else echo -e "${colors[green]}Bridge already existed, not running dhclient -r on it.${colors[white]}" ; fi
+    if [ $bridgePreexists -eq 0 ]; then echo "Running dhclient on $br..." ; dhclient -v $br 2>&1|grep '^DHCPACK' ; else echo -e "${colors[green]}Bridge already existed, not running dhclient -r on it.${colors[none]}" ; fi
     echo '------------------'
   elif [ "$mode" == "start" ] && isDry
   then
-    echo -e "${colors[green]}-bridge\t\tacknowledged [DRY]${colors[white]}"
+    echo -e "${colors[green]}-bridge\t\tacknowledged [DRY]${colors[none]}"
   elif [ "$mode" == "stop" ] && ! isDry
   then
     if [ $bridgePreexists -eq 0 ]
     then
       echo -e "${colors[yellow]}Cleaning up our bridge..."
-      dhclient -r $br >/dev/null 2>&1 && echo -e "${colors[green]}dhcp lease released and dhclient process ended...${colors[white]}"
+      dhclient -r $br >/dev/null 2>&1 && echo -e "${colors[green]}dhcp lease released and dhclient process ended...${colors[none]}"
       for i in $tap $br; do ip link set $i down ; ip link del $i; done # Remove the tap and bridge
-      if ! ip link show br0 >/dev/null 2>&1; then echo -e "${colors[green]}Bridge removed.${colors[white]}"; fi
+      if ! ip link show br0 >/dev/null 2>&1; then echo -e "${colors[green]}Bridge removed.${colors[none]}"; fi
     else
-      echo -e "${colors[green]}We only attached $tap to an existing bridge this run, removing $tap.${colors[white]}"
-      for i in $tap ; do ip link set $i down ; ip link del $i; done && echo -e "${colors[green]}$tap removed.${colors[white]}" # Remove the tap
+      echo -e "${colors[green]}We only attached $tap to an existing bridge this run, removing $tap.${colors[none]}"
+      for i in $tap ; do ip link set $i down ; ip link del $i; done && echo -e "${colors[green]}$tap removed.${colors[none]}" # Remove the tap
     fi
-    if [ "$nm" == "seen" ]; then systemctl restart NetworkManager ; echo -e "${colors[green]}NetworkManager restarted.${colors[white]}" ; fi
+    if [ "$nm" == "seen" ]; then systemctl restart NetworkManager ; echo -e "${colors[green]}NetworkManager restarted.${colors[none]}" ; fi
   fi
 }
 
@@ -215,8 +216,8 @@ function enumerateUSBs { # This only makes arguments
     then
       newUsbArg="-device usb-host,vendorid=0x$vendor,productid=0x$product"
         usbArgs="$usbArgs $newUsbArg"
-      echo -e "  Matched: ${colors[blue]}$vendor:$product '$Name'${colors[white]}"
-      echo -e "${colors[green]}    Added to USB Args as:\t$newUsbArg\n${colors[white]}"
+      echo -e "  Matched: ${colors[blue]}$vendor:$product '$Name'${colors[none]}"
+      echo -e "${colors[green]}    Added to USB Args as:\t$newUsbArg\n${colors[none]}"
     else
       echo -e "${colors[red]}Skipping: '$USBDevice' as there was an issue finding it.\n"
     fi
@@ -225,15 +226,15 @@ function enumerateUSBs { # This only makes arguments
 
 function enumeratePCIs { # This makes arguments and also unbinds from drivers. Optional vfio-pci rebinding.
   function gpuDetectedAndInUse {
-    echo -e "${colors[yellow]}Video device $1 appears to be in use by the host (Display-manager, efi-framebuffer[virtual consoles] or otherwise).${colors[white]}"
-    echo -e "${colors[yellow]}At the current time I'll need to stop your display manager to continue.${colors[white]}"
-    echo -e "${colors[yellow]}If you don't think the host is using this [RIGHT NOW] then there may be an error.${colors[white]}"
+    echo -e "${colors[yellow]}Video device $1 appears to be in use by the host (Display-manager, efi-framebuffer[virtual consoles] or otherwise).${colors[none]}"
+    echo -e "${colors[yellow]}At the current time I'll need to stop your display manager to continue.${colors[none]}"
+    echo -e "${colors[yellow]}If you don't think the host is using this [RIGHT NOW] then there may be an error.${colors[none]}"
     if systemctl is-active display-manager >/dev/null && ! isDry
     then
-      echo -e "${colors[yellow]}Stopping display-manager and unbinding console drivers in 5 seconds...${colors[white]}" ; sleep 5
+      echo -e "${colors[yellow]}Stopping display-manager and unbinding console drivers in 5 seconds...${colors[none]}" ; sleep 5
       systemctl stop display-manager ; export dm="seen"
     else
-      echo -e "${colors[yellow]}Could not find a service for display-manager.${colors[white]}"
+      echo -e "${colors[yellow]}Could not find a service for display-manager.${colors[none]}"
     fi
     consoleDrivers unbind && echo -e "${colors[yellow]} Console drivers unbound, host may be headless"
   }
@@ -250,7 +251,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   inc=0
   while read PCIDevice
   do
-    echo -e "  Matched: ${colors[blue]}$PCIDevice${colors[white]}"
+    echo -e "  Matched: ${colors[blue]}$PCIDevice${colors[none]}"
     shortBuspath="$(cut -d' ' -f1<<<$PCIDevice)"
     buspath="0000:$shortBuspath"
 
@@ -265,7 +266,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       then
         deviceDrivers["$vendorClass"]="$currentDriver" # Add it to our cool array
         driver="${deviceDrivers["$vendorClass"]}"
-        echo -e "    ${colors[green]}[INFO] Detected driver '$driver' is using this device. It will be re-bound on VM exit.${colors[white]}"
+        echo -e "    ${colors[green]}[INFO] Detected driver '$driver' is using this device. It will be re-bound on VM exit.${colors[none]}"
       fi
     fi
       driver="${deviceDrivers["$vendorClass"]}"
@@ -273,29 +274,29 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     if [[ $@ == *"unbind"* ]] && ! isDry
     then
       if ! isDry && grep -o '\[VGA controller\]' <<<$(lspci -vnnn -s "$buspath") ; then gpuDetectedAndInUse "$busPath[$vendorClass]" ; fi
-      echo -e "${colors[green]}    Unbinding from:\t${colors[white]}$driver" ; echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
+      echo -e "${colors[green]}    Unbinding from:\t${colors[none]}$driver" ; echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
     elif [[ $@ == *"unbind"* ]] && isDry
     then
-      echo -e "    ${colors[green]}[DRY]  Not unbinding it.${colors[white]}"
+      echo -e "    ${colors[green]}[DRY]  Not unbinding it.${colors[none]}"
     fi
 
     if [[ $@ == *"vfiobind"* ]] && ! isDry
     then
-      echo -e "${colors[green]}    Binding to:\t\t${colors[white]}vfio-pci" ; echo "0x$vendor 0x$class" > /sys/bus/pci/drivers/vfio-pci/new_id
+      echo -e "${colors[green]}    Binding to:\t\t${colors[none]}vfio-pci" ; echo "0x$vendor 0x$class" > /sys/bus/pci/drivers/vfio-pci/new_id
       if [ $? -ne 0 ]; then echo -e "    ${colors[red]}Rebind to vfio-pci failed!"; fi
       echo 1 > /sys/bus/pci/rescan
     elif [[ $@ == *"vfiobind"* ]] && isDry
     then
-      echo -e "    ${colors[green]}[DRY]  Not binding to:\t${colors[white]}vfio-pci"
+      echo -e "    ${colors[green]}[DRY]  Not binding to:\t${colors[none]}vfio-pci"
       echo
     elif [[ $@ == *"restorebind"* ]] && ! isDry
     then
       if ! [ -z "$driver" ]
       then
-        echo -e "${colors[green]}    Rebinding $vendorClass to driver:\t${colors[white]}$driver"
+        echo -e "${colors[green]}    Rebinding $vendorClass to driver:\t${colors[none]}$driver"
 	echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
 	echo "$buspath" > /sys/bus/pci/drivers/$driver/bind
-	if [ "$?" -eq "0" ]; then echo -e "${colors[green]}    Successfully rebound to:\t\t${colors[white]}$driver" ; else echo -e "${colors[red]}    Was unable to rebind it to $driver."; fi
+	if [ "$?" -eq "0" ]; then echo -e "${colors[green]}    Successfully rebound to:\t\t${colors[none]}$driver" ; else echo -e "${colors[red]}    Was unable to rebind it to $driver."; fi
       fi
     fi
 
@@ -320,14 +321,18 @@ while [ $# -gt 0 ]
 do
   case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
     -colortest|-colourtest)
-       echo -e "${colors[green]}Ok, printing a color test then exiting...${colors[white]}"
-       for i in $(sort <<< ${!colors[@]}) ; do echo -e "Test for: ${colors[$i]}$i ${colors[white]}" ; done
+       echo -e "${colors[green]}Ok, printing a color test then exiting...${colors[none]}"
+       for i in $(sort <<< ${!colors[@]}) ; do echo -e "Test for: ${colors[$i]}$i ${colors[none]}" ; done
+       echo -ne "${colors[none]}"
        exit $?
     ;;
+    -nocolor|-nocolors|-nocolor|-nocolors)
+       unset colors # Pretty simple color killer.
+    ;;
     -iommugroups|-iommugrouping)
-      echo -e "${colors[green]}Ok, printing IOMMU Groups then exiting...${colors[white]}"
+      echo -e "${colors[green]}Ok, printing IOMMU Groups then exiting...${colors[none]}"
       iommuDir="/sys/kernel/iommu_groups";
-      if [ -d $iommuDir ]; then for g in `ls -1v $iommuDir`; do echo "IOMMU Group $g"; for d in $iommuDir/$g/devices/* ; do echo -e "${colors[cyan]}\t$(lspci -nns ${d##*/})${colors[white]}"; done; done ; else echo "Couldn't find $iommuDir" ; fi
+      if [ -d $iommuDir ]; then for g in `ls -1v $iommuDir`; do echo "IOMMU Group $g"; for d in $iommuDir/$g/devices/* ; do echo -e "${colors[cyan]}\t$(lspci -nns ${d##*/})${colors[none]}"; done; done ; else echo "Couldn't find $iommuDir" ; fi
       exit $?
     ;; 
     -bridge)
@@ -377,7 +382,6 @@ do
         imageFormat="$2"
         shift
     ;;
-
      --help|-help)
         printHelp
     ;;
@@ -397,7 +401,7 @@ done
 
 if isDry
 then
-  echo -e "${colors[magenta]}This is a DRY run. Please specify ${colors[red]}-run${colors[magenta]} to actually run${colors[white]}"
+  echo -e "${colors[magenta]}This is a DRY run. Please specify ${colors[red]}-run${colors[magenta]} to actually run${colors[none]}"
 else
   if [ "$EUID" -ne 0 ]; then echo "This will not be a dry run, please use sudo."; exit 1 ; fi
     # Set a trap to run the cleanup function.
@@ -415,11 +419,11 @@ hostThreads=$(grep -Pom1 'siblings.*\ \K([0-9]+)$' /proc/cpuinfo )
 if [ -z "$taskset" ]
 then
   guestCores=$hostCores ; if [ ! -z $hostIsThreaded ]; then guestThreads=2; else guestThreads=1; fi
-  echo -e "${colors[yellow]}-taskset\tnot specified, guest gets full host CPU:\t${colors[white]}($hostCores) with ($hostThreads) threads."
+  echo -e "${colors[yellow]}-taskset\tnot specified, guest gets full host CPU:\t${colors[none]}($hostCores) with ($hostThreads) threads."
 else
   if grep -qE '^([0-9]|,)+$' <<< $tasksetThreads
   then
-	  echo -e "${colors[green]}-taskset\tspecified, Guest will run on host CPU threads:\t${colors[white]}$tasksetThreads"
+	  echo -e "${colors[green]}-taskset\tspecified, Guest will run on host CPU threads:\t${colors[none]}$tasksetThreads"
     OLDIFS="$IFS" ; IFS=, ; tasksetCount=$(echo $tasksetThreads| wc -w) ; IFS="$OLDIFS"
       # Check if specified -taskset thread count is divisible by 2. Use hyperthreading/smt if supported
     if (( $tasksetCount % 2 == 0 )) && [ "$hostIsThreaded" == "1" ] ; then guestCores=$((( $tasksetCount / 2 ))) ; guestThreads=2; else guestCores=$tasksetCount ; guestThreads=1 ; fi
@@ -435,9 +439,9 @@ then
   if [ ! -z "$totalHostMemoryKB" ]
   then
     guestmemoryMB="$((($totalHostMemoryKB / 1024 / 2)))"
-    echo -e "${colors[yellow]}-memory\t\tnot specified, will use half host total:\t${colors[white]}${guestmemoryMB} MB${colors[white]}"
+    echo -e "${colors[yellow]}-memory\t\tnot specified, will use half host total:\t${colors[none]}${guestmemoryMB} MB${colors[none]}"
   else
-    echo "${colors[red]}Failed to find a default memory value for the guest.${colors[white]}"
+    echo "${colors[red]}Failed to find a default memory value for the guest.${colors[none]}"
   fi
 else
   if  [[ "$memoryArgs" =~ 'G' ]]; then memoryArgs="$((($(grep -Eo '[0-9]+' <<< $memoryArgs) * 1024 )))"; fi # Convert to MB
@@ -452,7 +456,7 @@ then
   then
     echo -e "${colors[red]}-bios\t\tnot specified and couldn't find default '$defaultBiosPath'. Please install OVMF or set your .fd file with the -bios argument"
   else
-    echo -e "${colors[green]}-bios\t\tnot specified, using discovered default:\t${colors[white]}${defaultBiosPath}"
+    echo -e "${colors[green]}-bios\t\tnot specified, using discovered default:\t${colors[none]}${defaultBiosPath}"
     biosPath=$defaultBiosPath
   fi
 fi
@@ -484,19 +488,19 @@ then
   HugePages_Free="$(readMeminfo HugePages_Free)"
   if [[ "$(readMeminfo HugePages_Free)" -lt "$pagesRequired" ]]
   then
-    echo -ne "${colors[red]}Error, couldn't allocate all required pages. Please free up memory or check your system.${colors[white]}\n\t${colors[yellow]}(${colors[white]}$HugePages_Free ${colors[yellow]}pages free out of ${colors[white]}$pagesRequired${colors[yellow]} requested. With that the highest value achieved right now is:${colors[white]} -mem $((($HugePages_Free * HugepagesizeMB)))${colors[yellow]})${colors[white]}\n"
+    echo -ne "${colors[red]}Error, couldn't allocate all required pages. Please free up memory or check your system.${colors[none]}\n\t${colors[yellow]}(${colors[none]}$HugePages_Free ${colors[yellow]}pages free out of ${colors[none]}$pagesRequired${colors[yellow]} requested. With that the highest value achieved right now is:${colors[none]} -mem $((($HugePages_Free * HugepagesizeMB)))${colors[yellow]})${colors[none]}\n"
     exit 1
   else
     echo "Hugepages ready."
   fi
 elif isDry
   then
-  echo -e "${colors[green]}-hugepages\tacknowledged [DRY]${colors[white]}"
+  echo -e "${colors[green]}-hugepages\tacknowledged [DRY]${colors[none]}"
 fi
 
 if [  "$HUGEPAGES" == "1" ] && [ -z "$hugeMount" ] && ! isDry
 then
-  echo -e "${colors[red]}Unable to find the hugepage mount at $hugePath. Hugepages is not enabled for this run.${colors[white]}"
+  echo -e "${colors[red]}Unable to find the hugepage mount at $hugePath. Hugepages is not enabled for this run.${colors[none]}"
 fi
  
   # Make the bridge
@@ -510,7 +514,7 @@ if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
   smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
   if [ ! -z "$image" ] && [ ! -z "$imageFormat" ]; then image="$image,format=$imageFormat" ; fi
-  if [ ! -z "$image" ] ; then coreArgs="$coreArgs -drive file=$image,id=disk" ; else echo -e "${colors[yellow]}-image\tnot specified. This VM will run diskless.${colors[white]}\n" ; fi
+  if [ ! -z "$image" ] ; then coreArgs="$coreArgs -drive file=$image,id=disk" ; else echo -e "${colors[yellow]}-image\tnot specified. This VM will run diskless.${colors[none]}\n" ; fi
   coreArgs="$coreArgs -drive if=pflash,format=raw,unit=0,readonly,file=$biosPath"
     if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
     if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
@@ -519,14 +523,14 @@ networkArgs="-device virtio-net,netdev=network0"
 if [[ ! -z "$bridgeArgs" ]];
 then
   networkArgs="$networkArgs -netdev tap,id=network0,ifname=tap0,script=no,downscript=no" # Bridge
-  echo -e "${colors[green]}-bridge\t\tspecified, VM will be bridged to the host with a tap adapter.${colors[white]}"
+  echo -e "${colors[green]}-bridge\t\tspecified, VM will be bridged to the host with a tap adapter.${colors[none]}"
 elif [[ ! -z "$noNet" ]]
 then
   networkArgs=""
-  echo -e "${colors[green]}-nonet specified, there will be no virtual networking for the VM this run.${colors[white]}"
+  echo -e "${colors[green]}-nonet specified, there will be no virtual networking for the VM this run.${colors[none]}"
 else
   networkArgs="$networkArgs -netdev user,id=network0" # NAT
-  echo -e "${colors[yellow]}No network arguments (-bridge/-nonet) specified, using a NAT adapter for VM networking this run.${colors[white]}"
+  echo -e "${colors[yellow]}No network arguments (-bridge/-nonet) specified, using a NAT adapter for VM networking this run.${colors[none]}"
 fi
 
   # Remove any leading/trailing pipes from the regex just in case.
@@ -547,12 +551,12 @@ if isDry;
 then
   echo "---------------------"
   echo "Here are the completed args from this DRY run:"
-  echo -e "Core:\n${colors[blue]} $coreArgs $hugeArgs${colors[white]}"
-  if [ ! -z "$networkArgs" ]; then echo -e "Net :\n${colors[blue]} $networkArgs${colors[white]}" ; fi
-  if [ ! -z "$usbArgs" ] ; then echo -e "USB :\n${colors[blue]} $usbArgs${colors[white]}" ; fi
-  if [ ! -z "$pciArgs" ] ; then echo -e "PCI :\n${colors[blue]}$pciArgs${colors[white]}" ; fi
-  if [ ! -z "$taskset" ]; then echo -e "Taskset params to invoke qemu: ${colors[blue]}$taskset${colors[white]}"; fi
-  echo -ne "\nRun the script with the same arguments again and include ${colors[red]}-run${colors[white]} to actually pass these to qemu-system-x86_64\n"
+  echo -e "Core:\n${colors[blue]} $coreArgs $hugeArgs${colors[none]}"
+  if [ ! -z "$networkArgs" ]; then echo -e "Net :\n${colors[blue]} $networkArgs${colors[none]}" ; fi
+  if [ ! -z "$usbArgs" ] ; then echo -e "USB :\n${colors[blue]} $usbArgs${colors[none]}" ; fi
+  if [ ! -z "$pciArgs" ] ; then echo -e "PCI :\n${colors[blue]}$pciArgs${colors[none]}" ; fi
+  if [ ! -z "$taskset" ]; then echo -e "Taskset params to invoke qemu: ${colors[blue]}$taskset${colors[none]}"; fi
+  echo -ne "\nRun the script with the same arguments again and include ${colors[red]}-run${colors[none]} to actually pass these to qemu-system-x86_64\n"
   exit 0
 else
   echo -ne "Starting qemu now.\n\n"
