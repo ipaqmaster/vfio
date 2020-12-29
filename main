@@ -476,7 +476,7 @@ then
     mount -t hugetlbfs hugetlbfs -o mode=01770,gid=0 $hugePath && hugeMount=self && hugeArgs="-mem-path $hugePath" # So we can umount later
   fi
   echo 3 > /proc/sys/vm/drop_caches && echo -ne "Memory cache dropped for hugepages...\n"
-  echo -ne "running compat_memory... " ; echo 1 > /proc/sys/vm/compact_memory && echo -ne "compat_memory run for hugepages...\n"
+  echo -ne "running compact_memory... " ; echo 1 > /proc/sys/vm/compact_memory && echo -ne "compact_memory run for hugepages...\n"
   echo "$pagesRequired" > /proc/sys/vm/nr_hugepages ; echo -ne "Giving hugepages a moment to allocate."
   while [ $(readMeminfo HugePages_Free) -lt $pagesRequired ]
   do
