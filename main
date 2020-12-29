@@ -1,5 +1,5 @@
 #!/bin/bash
-DRY=1 # Assume dry, '-run' flag will flip the bit later.
+DRY=1   # Assume dry, '-run' flag will flip the bit later.
 echo "" # Professional padding
 
 # Some colors
@@ -97,6 +97,11 @@ function readMeminfo { if [ ! -z "$1" ]; then grep -m1 "$1" /proc/meminfo | grep
 
   # Try to undo any mess we've caused
 function do_cleanup {
+    # Restore original permissions
+  sudo chown root /dev/vfio/*
+  sudo chown root /dev/hugepages
+  sudo chown root ${imagePath}
+  sudo chown root /dev/net/tun*
   echo -ne "${colors[none]}"
   if ! isDry
   then
@@ -109,12 +114,12 @@ function do_cleanup {
     then
       if [ ! -z "$consoleUnbound" ]; then consoleDrivers bind; fi # var only checked for zero length
       enumeratePCIs restorebind
-      if  [ "$dm" == "seen" ]; then echo "Attempting to restore display-manager..." ; systemctl start display-manager ; fi # Start DM if seen before run.
+      if  [ "$dm" == "seen" ]; then echo "Attempting to restore display-manager..." ; sudo systemctl start display-manager ; fi # Start DM if seen before run.
     fi
 
     if [ "$HUGEPAGES" == "1" ] # Clean up hugepages
     then
-      echo 0 > /proc/sys/vm/nr_hugepages # pack up
+      echo 0 | sudo tee /proc/sys/vm/nr_hugepages >/dev/null # pack up
       if [ "$hugeMount" == "self" ]; then umount $hugePath ; fi #umount if we mounted it
     fi
   fi
@@ -158,18 +163,18 @@ function bridger {
 
     if [ $bridgePreexists -eq 0 ]
     then
-      if systemctl is-active NetworkManager >/dev/null ; then systemctl stop NetworkManager ; export nm="seen" ; fi
+      if systemctl is-active NetworkManager >/dev/null ; then sudo systemctl stop NetworkManager ; export nm="seen" ; fi
         # Create the bridge,        bring it up.
-      ip link add $br type bridge ; ip link set $br up
+      sudo ip link add $br type bridge ; sudo ip link set $br up
         # Remove IPs from int,  attach int to bridge,              give bridge int's mac,                bring int up.
-      if [ $intExists = 1 ] ; then ip addr flush dev $int && ip link set dev $int master $br && ip link set dev $br address $intMAC ; ip link set $int up ; fi
+      if [ $intExists = 1 ] ; then sudo ip addr flush dev $int && sudo ip link set dev $int master $br && sudo ip link set dev $br address $intMAC ; sudo ip link set $int up ; fi
     fi
 
       # Always create the tap,     attach tap to bridge,          bring tap up.
-    ip tuntap add $tap mode tap && ip link set $tap master $br && ip link set $tap up
+    sudo ip tuntap add $tap mode tap && sudo ip link set $tap master $br && sudo ip link set $tap up
     echo '------------------'
     echo -ne "Bridge details:\n\n" ; brctl show $br ; echo
-    if [ $bridgePreexists -eq 0 ]; then echo "Running dhclient on $br..." ; dhclient -v $br 2>&1|grep '^DHCPACK' ; else echo -e "${colors[green]}Bridge already existed, not running dhclient -r on it.${colors[none]}" ; fi
+    if [ $bridgePreexists -eq 0 ]; then echo "Running dhclient on $br..." ; sudo dhclient -v $br 2>&1|grep '^DHCPACK' ; else echo -e "${colors[green]}Bridge already existed, not running dhclient -r on it.${colors[none]}" ; fi
     echo '------------------'
   elif [ "$mode" == "start" ] && isDry
   then
@@ -180,13 +185,13 @@ function bridger {
     then
       echo -e "${colors[yellow]}Cleaning up our bridge..."
       dhclient -r $br >/dev/null 2>&1 && echo -e "${colors[green]}dhcp lease released and dhclient process ended...${colors[none]}"
-      for i in $tap $br; do ip link set $i down ; ip link del $i; done # Remove the tap and bridge
+      for i in $tap $br; do sudo ip link set $i down ; sudo ip link del $i; done # Remove the tap and bridge
       if ! ip link show br0 >/dev/null 2>&1; then echo -e "${colors[green]}Bridge removed.${colors[none]}"; fi
     else
       echo -e "${colors[green]}We only attached $tap to an existing bridge this run, removing $tap.${colors[none]}"
-      for i in $tap ; do ip link set $i down ; ip link del $i; done && echo -e "${colors[green]}$tap removed.${colors[none]}" # Remove the tap
+      for i in $tap ; do sudo ip link set $i down ; sudo ip link del $i; done && echo -e "${colors[green]}$tap removed.${colors[none]}" # Remove the tap
     fi
-    if [ "$nm" == "seen" ]; then systemctl restart NetworkManager ; echo -e "${colors[green]}NetworkManager restarted.${colors[none]}" ; fi
+    if [ "$nm" == "seen" ]; then sudo systemctl restart NetworkManager ; echo -e "${colors[green]}NetworkManager restarted.${colors[none]}" ; fi
   fi
 }
 
@@ -194,8 +199,8 @@ function consoleDrivers { # Toggles rendering to Ctrl+Alt+F[0-9]. Needs to be un
   if ! isDry
   then 
     if [[ "$1" -eq 'bind' ]]; then bindBoolean="1"; bindState="$1" ; else bindBoolean="0" ; bindState="unbind" ; fi
-    for vtconsole in /sys/class/vtconsole/*; do echo $bindBoolean > $vtconsole/bind ; done
-    echo efi-framebuffer.0 > /sys/bus/platform/drivers/efi-framebuffer/$bindState
+    for vtconsole in /sys/class/vtconsole/*; do echo $bindBoolean | sudo tee $vtconsole/bind >/dev/null; done
+    echo efi-framebuffer.0 | sudo tee /sys/bus/platform/drivers/efi-framebuffer/$bindState >/dev/null
     consoleUnbound=1
   fi
 }
@@ -232,7 +237,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     if systemctl is-active display-manager >/dev/null && ! isDry
     then
       echo -e "${colors[yellow]}Stopping display-manager and unbinding console drivers in 5 seconds...${colors[none]}" ; sleep 5
-      systemctl stop display-manager ; export dm="seen"
+      sudo systemctl stop display-manager ; export dm="seen"
     else
       echo -e "${colors[yellow]}Could not find a service for display-manager.${colors[none]}"
     fi
@@ -241,8 +246,8 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
 
   echo "PCI:"
   declare -A -g deviceDrivers # Our cool array
-  if ! lsmod|grep -q vfio_pci; then modprobe vfio-pci; fi
-  if [ "$?" -ne "0" ]; then echo "Could not modprove vfio-pci. Please fix this."; exit 1 ; fi
+  if ! lsmod|grep -q vfio_pci; then sudo modprobe vfio-pci; fi
+  if [ "$?" -ne "0" ]; then echo "Could not modprobe vfio-pci. Please fix this."; exit 1 ; fi
 
   lspciOutput="$(lspci -nn)"
   if [ -z "$pciREGEX" ]; then echo "pciREGEX variable is empty. Not sure how I was called? Panicing."; exit 1; fi 
@@ -274,7 +279,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     if [[ $@ == *"unbind"* ]] && ! isDry
     then
       if ! isDry && grep -o '\[VGA controller\]' <<<$(lspci -vnnn -s "$buspath") ; then gpuDetectedAndInUse "$busPath[$vendorClass]" ; fi
-      echo -e "${colors[green]}    Unbinding from:\t${colors[none]}$driver" ; echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
+      echo -e "${colors[green]}    Unbinding from:\t${colors[none]}$driver" ; echo "$buspath" | sudo tee /sys/bus/pci/devices/$buspath/driver/unbind >/dev/null
     elif [[ $@ == *"unbind"* ]] && isDry
     then
       echo -e "    ${colors[green]}[DRY]  Not unbinding it.${colors[none]}"
@@ -282,9 +287,9 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
 
     if [[ $@ == *"vfiobind"* ]] && ! isDry
     then
-      echo -e "${colors[green]}    Binding to:\t\t${colors[none]}vfio-pci" ; echo "0x$vendor 0x$class" > /sys/bus/pci/drivers/vfio-pci/new_id
+      echo -e "${colors[green]}    Binding to:\t\t${colors[none]}vfio-pci" ; echo "0x$vendor 0x$class" | sudo tee /sys/bus/pci/drivers/vfio-pci/new_id >/dev/null
       if [ $? -ne 0 ]; then echo -e "    ${colors[red]}Rebind to vfio-pci failed!"; fi
-      echo 1 > /sys/bus/pci/rescan
+      echo 1 | sudo tee /sys/bus/pci/rescan >/dev/null
     elif [[ $@ == *"vfiobind"* ]] && isDry
     then
       echo -e "    ${colors[green]}[DRY]  Not binding to:\t${colors[none]}vfio-pci"
@@ -294,8 +299,8 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       if ! [ -z "$driver" ]
       then
         echo -e "${colors[green]}    Rebinding $vendorClass to driver:\t${colors[none]}$driver"
-	echo "$buspath" > /sys/bus/pci/devices/$buspath/driver/unbind
-	echo "$buspath" > /sys/bus/pci/drivers/$driver/bind
+	echo "$buspath" | sudo tee /sys/bus/pci/devices/$buspath/driver/unbind >/dev/null
+	echo "$buspath" | sudo tee /sys/bus/pci/drivers/$driver/bind >/dev/null
 	if [ "$?" -eq "0" ]; then echo -e "${colors[green]}    Successfully rebound to:\t\t${colors[none]}$driver" ; else echo -e "${colors[red]}    Was unable to rebind it to $driver."; fi
       fi
     fi
@@ -371,11 +376,10 @@ do
     ;;
      -taskset)
         tasksetThreads="$2"
-        taskset="chrt -r 1 taskset -c $tasksetThreads"
         shift
     ;;
      -image)
-        image="$2"
+        imagePath="$2"
         shift
     ;;
      -imageformat|-format)
@@ -403,12 +407,11 @@ if isDry
 then
   echo -e "${colors[magenta]}This is a DRY run. Please specify ${colors[red]}-run${colors[magenta]} to actually run${colors[none]}"
 else
-  if [ "$EUID" -ne 0 ]; then echo "This will not be a dry run, please use sudo."; exit 1 ; fi
     # Set a trap to run the cleanup function.
   trap do_cleanup  EXIT HUP INT TERM
 fi
 
-  # Check for active IOMMU module.
+  # Check IOMMU is active and grouping things.
 if [ -z "$(find /sys/class/iommu/ -type l)" ]; then echo -ne "IOMMU isn't loaded?\n  For an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader.\n  If you're on an AMD machine instead add these two: 'iommu=pt iommu=1'\n\n  If you've already done this and rebooted, your host may not be compatible or some relevant bios settings could be disabled.\n  Feel free to ask about this in case it's a script fault.\n" ; exit 1; fi
 
   # Determine Host cpu cores/threads and what the guest gets based on -taskset (if specified).
@@ -416,7 +419,7 @@ hostThreads=$(grep -Pom1 'siblings.*\ \K([0-9]+)$' /proc/cpuinfo )
   hostCores=$(grep -Pom1 'cpu cores.*\ \K([0-9]+)$' /proc/cpuinfo)
   if [ "$((($hostCores * 2)))" == "$hostThreads" ]; then hostIsThreaded=1; fi
 
-if [ -z "$taskset" ]
+if [ -z "$tasksetThreads" ]
 then
   guestCores=$hostCores ; if [ ! -z $hostIsThreaded ]; then guestThreads=2; else guestThreads=1; fi
   echo -e "${colors[yellow]}-taskset\tnot specified, guest gets full host CPU:\t${colors[none]}($hostCores) with ($hostThreads) threads."
@@ -475,13 +478,13 @@ then
     echo "/dev/hugepages not mounted, attempting to mount it."
     mount -t hugetlbfs hugetlbfs -o mode=01770,gid=0 $hugePath && hugeMount=self && hugeArgs="-mem-path $hugePath" # So we can umount later
   fi
-  echo 3 > /proc/sys/vm/drop_caches && echo -ne "Memory cache dropped for hugepages...\n"
-  echo -ne "running compact_memory... " ; echo 1 > /proc/sys/vm/compact_memory && echo -ne "compact_memory run for hugepages...\n"
-  echo "$pagesRequired" > /proc/sys/vm/nr_hugepages ; echo -ne "Giving hugepages a moment to allocate."
+  echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null && echo -ne "Memory cache dropped for hugepages...\n"
+  echo -ne "running compact_memory... " ; echo 1 | sudo tee /proc/sys/vm/compact_memory >/dev/null && echo -ne "compact_memory run for hugepages...\n"
+  echo "$pagesRequired" | sudo tee /proc/sys/vm/nr_hugepages >/dev/null ; echo -ne "Giving hugepages a moment to allocate."
   while [ $(readMeminfo HugePages_Free) -lt $pagesRequired ]
   do
    echo -ne '.'
-   count=$((($count+1))) ; if [ $count -gt 5 ]; then break; fi
+   count=$((($count+1))) ; if [ $count -gt 30 ]; then break; fi
    sleep 1
   done ; echo '' # Newline
 
@@ -513,8 +516,8 @@ if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
   cpuArgs="-cpu host,kvm=off"
   smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
-  if [ ! -z "$image" ] && [ ! -z "$imageFormat" ]; then image="$image,format=$imageFormat" ; fi
-  if [ ! -z "$image" ] ; then coreArgs="$coreArgs -drive file=$image,id=disk" ; else echo -e "${colors[yellow]}-image\tnot specified. This VM will run diskless.${colors[none]}\n" ; fi
+  if [ ! -z "$imagePath" ] && [ ! -z "$imageFormat" ]; then image="$image,format=$imageFormat" ; fi
+  if [ ! -z "$imagePath" ] ; then coreArgs="$coreArgs -drive file=$imagePath,id=disk" ; else echo -e "${colors[yellow]}-image\t\tnot specified. This VM will run diskless.${colors[none]}\n" ; fi
   coreArgs="$coreArgs -drive if=pflash,format=raw,unit=0,readonly,file=$biosPath"
     if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
     if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
@@ -555,12 +558,20 @@ then
   if [ ! -z "$networkArgs" ]; then echo -e "Net :\n${colors[blue]} $networkArgs${colors[none]}" ; fi
   if [ ! -z "$usbArgs" ] ; then echo -e "USB :\n${colors[blue]} $usbArgs${colors[none]}" ; fi
   if [ ! -z "$pciArgs" ] ; then echo -e "PCI :\n${colors[blue]}$pciArgs${colors[none]}" ; fi
-  if [ ! -z "$taskset" ]; then echo -e "Taskset params to invoke qemu: ${colors[blue]}$taskset${colors[none]}"; fi
   echo -ne "\nRun the script with the same arguments again and include ${colors[red]}-run${colors[none]} to actually pass these to qemu-system-x86_64\n"
   exit 0
 else
+  sudo prlimit --pid $$ --memlock=unlimited:unlimited
+  sudo chown $USER /dev/vfio/*
+  sudo chown $USER /dev/hugepages
+  sudo chown $USER ${imagePath}
+  sudo chown $USER /dev/net/tun*
+  set -m # Allow scripted bash job controls (fg bg, etc)
   echo -ne "Starting qemu now.\n\n"
-  $taskset qemu-system-x86_64 $coreArgs $hugeArgs $networkArgs $usbArgs $pciArgs
+  qemu-system-x86_64 $coreArgs $hugeArgs $networkArgs $usbArgs $pciArgs &
+  sudo chrt -p 1 -p $!                  # Set qemu to have high priority
+  sudo taskset -cp ${tasksetThreads} $! # Set the permitted host threads
+  fg
 fi
 
 
