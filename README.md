@@ -173,14 +173,16 @@ This example would catch any:
 Note: I've omitted `-run` from these so they remain a dry-run.
 
 If you aren't ready to do any passthrough and just want to start the VM in a regular window (Installation, Drivers, etc.):
-  `sudo ./main -image /root/windows.img,format=raw -cdrom /root/Win10Latest.iso`
+  `./main -image /root/windows.img,format=raw -cdrom /root/Win10Latest.iso`
 
 If a host has been booted with isolated cores you can tell the script to pin the guest to those only:
-  `sudo ./main -image /root/windows.img,format=raw -taskset 0,1,2,3,4,5`
+  `./main -image /root/windows.img,format=raw -taskset 0,1,2,3,4,5`
+  
   This example starts the VM with only host threads 0 to 5 (The first 3 cores on a multi-threaded host)
   Very useful if a VM experiences stuttering from host load.
 
 An example run with passthrough could look like:
-  `sudo ./main -image /dev/zvol/poolName/windows,format=raw -bridge br0,eth0,tap0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'`
+  `./main -image /dev/zvol/poolName/windows,format=raw -bridge br0,eth0,tap0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'`
+  
   This example would  would (if seen) pass all regex-matching USB and PCI devices and rebind the PCI devices if applicable.
 It would also provision network bridge br0 and attach tap0 to the bridge with your host interface. Then give tap0 to the VM.
