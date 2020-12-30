@@ -275,16 +275,17 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   if ! lsmod|grep -q vfio_pci; then sudo modprobe vfio-pci; fi
   if [ "$?" -ne "0" ]; then echo "Could not modprobe vfio-pci. Please fix this."; exit 1 ; fi
 
-  lspciOutput="$(lspci -nn)"
-  if [ -z "$pciREGEX" ]; then echo "pciREGEX variable is empty. Not sure how I was called? Panicing."; exit 1; fi 
-  PCIDevices="$(grep -E "$pciREGEX" <<<"$lspciOutput")"
-  if [ -z "$PCIDevices" ]; then echo "Couldn't find any PCI devices with regex '$pciREGEX', please try another one. Panicing."; exit 1; fi 
+  lspciOutput="$(lspci -nn)" ; PCIDevices="$(grep -E "$pciREGEX" <<<"$lspciOutput")"
+  if [ -z "$PCIDevices" ]; then echo "Couldn't find any PCI devices with regex '$pciREGEX', please try another one. Panicking."; exit 1; fi 
   inc=0
   while read PCIDevice
   do
-    echo -e "  Matched: ${colors[blue]}$PCIDevice${colors[none]}"
     shortBuspath="$(cut -d' ' -f1<<<$PCIDevice)"
     buspath="0000:$shortBuspath"
+    iommuGroup="$(basename $(readlink /sys/bus/pci/devices/$buspath/iommu_group))"
+
+    echo -e "  Matched:\t${colors[blue]}$PCIDevice${colors[none]}"
+    echo -e "  IOMMU Group:\t${colors[blue]}${iommuGroup}${colors[none]}"
 
     vendorClass="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$PCIDevice )"
     vendor="$( cut -d':' -f1 <<<"$vendorClass")"
@@ -297,7 +298,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       then
         deviceDrivers["$vendorClass"]="$currentDriver" # Add it to the device driver array.
         driver="${deviceDrivers["$vendorClass"]}"
-        echo -e "    ${colors[green]}[INFO] Detected driver '$driver' is using this device. It will be re-bound on VM exit.${colors[none]}"
+        echo -e "    [INFO] ${colors[green]}Detected driver ${colors[none]}${driver}${colors[green]} is using this device. It will be re-bound on VM exit.${colors[none]}"
       fi
     fi
       driver="${deviceDrivers["$vendorClass"]}"
@@ -308,7 +309,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       echo -e "${colors[green]}    Unbinding from:\t${colors[none]}$driver" ; echo "$buspath" | sudo tee /sys/bus/pci/devices/$buspath/driver/unbind >/dev/null
     elif [[ $@ == *"unbind"* ]] && isDry
     then
-      echo -e "    ${colors[green]}[DRY]  Not unbinding it.${colors[none]}"
+      echo -e "    [DRY]  ${colors[green]}Not unbinding it.${colors[none]}"
     fi
 
     if [[ $@ == *"vfiobind"* ]] && ! isDry
@@ -316,10 +317,10 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       echo -e "${colors[green]}    Binding to:\t\t${colors[none]}vfio-pci" ; echo "0x$vendor 0x$class" | sudo tee /sys/bus/pci/drivers/vfio-pci/new_id >/dev/null
       if [ $? -ne 0 ]; then echo -e "    ${colors[red]}Rebind to vfio-pci failed!"; fi
       echo 1 | sudo tee /sys/bus/pci/rescan >/dev/null
-      permissionsManager takeown /dev/vfio/*
+      permissionsManager takeown /dev/vfio/${iommuGroup}
     elif [[ $@ == *"vfiobind"* ]] && isDry
     then
-      echo -e "    ${colors[green]}[DRY]  Not binding to:\t${colors[none]}vfio-pci"
+      echo -e "    [DRY]  ${colors[green]}Not binding to:\t${colors[none]}vfio-pci"
       echo
     elif [[ $@ == *"restorebind"* ]] && ! isDry
     then
