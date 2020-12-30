@@ -2,6 +2,7 @@
 DRY=1   # Assume dry, '-run' flag will flip the bit later.
 echo "" # Professional padding
 
+
 # Some colors
 declare -A colors
 colors[none]="\e[0m"
@@ -42,51 +43,79 @@ fi
 function printHelp {
   echo -e "This script exists to make various vfio activity less convoluted. Among other use-cases"
   echo -e "such as LiveCD usage, testing if drives boot, PXE imaging, or any thing else with optional PCI passthrough."
-  echo -e "I hope somebody finds it useful."
-  echo -e 
-  echo -e "Valid example arguments: [${colors[blue]}There's more in the README.md!${colors[none]}]"
-  echo -e
+  echo -e "Hopefully somebody finds it useful.\n"
+
+  echo -e "Valid example arguments: [${colors[blue]}There's more in the README.md!${colors[none]}]\n"
+
   echo -e "[Required for most use-cases]"
   echo -e "  ${colors[cyan]}-image /dev/zvol/zpool/windows${colors[none]}"
   echo -e "  ${colors[cyan]}-imageformat${colors[none]}/-format raw/qcow/vdi/etc${colors[none]}"
-  echo -e "    A file or blockdevice to give the guest. Complete with it's [Qemu recognised] format"
-  echo -e
-  echo -e "[For first-install or liveCD booting]"
+  echo -e "    A file or blockdevice to give the guest. Complete with it's [Qemu recognised] format\n"
+
+  echo -e "\n[For first-install or liveCD booting]"
   echo -e "  ${colors[cyan]}-iso /path/to/a/diskimage.iso${colors[none]}"
-  echo -e "    If you're installing the OS for drivers you may wish to include this"
-  echo -e
-  echo -e "[Extra useful flags and for vm runtime]"
+  echo -e "    If you're installing the OS for drivers you may wish to include this\n"
+
+  echo -e "\n[Extra useful flags and for vm runtime]"
   echo -e "  ${colors[cyan]}-iommugroups / -iommugrouping${colors[none]}"
-  echo -e "    (Try to) Print IOMMU Groups then exit. Useful for the -PCI arg."
-  echo -e
+  echo -e "    (Try to) Print IOMMU Groups then exit. Useful for the -PCI arg.\n"
+
   echo -e "  ${colors[cyan]}-bridge br0,tap0${colors[none]}\t(Attach vm's tap0 to existing br0)"
   echo -e "  ${colors[cyan]}-bridge br0,tap0,eth0${colors[none]}\t(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)"
   echo -e "    If no network options are specified the default qemu NAT adapter will be used."
 
   echo -e "  ${colors[cyan]}-nonet${colors[none]}"
-  echo -e "    If specified, the VM is not given a network adapter. Useful if you're passing a USB or PCI network card."
-  echo -e
-  echo -e
+  echo -e "    If specified, the VM is not given a network adapter. Useful if you're passing a USB or PCI network card.\n"
+
   echo -e "  ${colors[cyan]}-memory 8192M${colors[none]} / ${colors[cyan]}-memory 8G${colors[none]} / ${colors[cyan]}-mem xxxxM${colors[none]}"
-  echo -e "    Set VM memory (Default is half of system total memory)"
-  echo -e
+  echo -e "    Set VM memory (Default is half of system total memory)\n"
+
   echo -e "  ${colors[cyan]}-hugepages${colors[none]} / ${colors[cyan]}-huge${colors[none]}"
   echo -e "    Try to mount & allocate hugepages for qemu with the -mem specified."
-  echo -e "    (May want to specify -mem for this. Half of host ram may be too much.)"
-  echo -e
+  echo -e "    (May want to specify -mem for this. Half of host ram may be too much.)\n"
+
   echo -e "  ${colors[cyan]}-usb 'SteelSeries|Keyboard|Xbox|1234:5678'${colors[none]}"
-  echo -e "    A regex for lsusb parsing. Can be anything that matches a specific device line"
-  echo -e
+  echo -e "    A regex for lsusb parsing. Can be anything that matches a specific device line\n"
+
   echo -e "  ${colors[cyan]}-pci 'Realtek|NVIDIA|10ec:8168'${colors[none]}"
-  echo -e "    A regex for lspci parsing. Example will take any nvidia and Realtek cards, plus any device with the ID."
-  echo -e
+  echo -e "    A regex for lspci parsing. Example will take any nvidia and Realtek cards, plus any device with the ID.\n"
+
   echo -e "  ${colors[cyan]}-taskset 0,1,2,3,4,5,6 / ${colors[cyan]}-taskset 0,2,4,8${colors[none]}"
   echo -e "    A comma delimited list of host threads the Guest is allowed to execute on."
   echo -e "    (Setting this also shapes the guest CPU topology to match.)"
-  echo -e "    If you've configured core isolation on the host, this is the argument for you!"
-  echo -e
+  echo -e "    If you've configured core isolation on the host, this is the argument for you!\n"
+
   echo -e "Please see the README.md file for more information about the flags."
   exit 1
+}
+
+function permissionsManager { # chown's things before qemu starts, but also tries to return them in the end.
+  if isDry ; then return ; fi # Do nothing when dry.
+
+  if ! declare -p Permissions >/dev/null 2>&1 ; then declare -g -A Permissions ; fi # Check array is ready for use.
+ 
+  if [ "$1" == "takeown" ] # Takes ownership of a file or dir with sudo
+  then
+    for path in "${@:2}"
+    do
+      originalOwner="$(stat -c %U ${path})"
+      if [ "${originalOwner}" == "${USER}" ]
+      then
+        continue # If we already own this, do nothing.
+      else
+          # Take ownership but keep track
+        Permissions[${path}]=${originalOwner} ; sudo chown ${USER} ${path}
+      fi 
+    done
+  elif [ "$1" == "return" ]
+  then
+    # Returns all stored in the array to original owner
+    for entry in ${!Permissions[@]}
+    do
+      originalOwner="${Permissions[$entry]}" ; sudo chown ${originalOwner} ${entry}
+    done
+  fi
+
 }
 
  # Check if script is in dry mode.
@@ -97,11 +126,7 @@ function readMeminfo { if [ ! -z "$1" ]; then grep -m1 "$1" /proc/meminfo | grep
 
   # Try to undo any mess we've caused
 function do_cleanup {
-    # Restore original permissions
-  sudo chown root /dev/vfio/*
-  sudo chown root /dev/hugepages
-  sudo chown root ${imagePath}
-  sudo chown root /dev/net/tun*
+  permissionsManager return # Restore original permissions if any
   echo -ne "${colors[none]}"
   if ! isDry
   then
@@ -172,6 +197,7 @@ function bridger {
 
       # Always create the tap,     attach tap to bridge,          bring tap up.
     sudo ip tuntap add $tap mode tap && sudo ip link set $tap master $br && sudo ip link set $tap up
+    permissionsManager takeown /dev/net/tun*
     echo '------------------'
     echo -ne "Bridge details:\n\n" ; brctl show $br ; echo
     if [ $bridgePreexists -eq 0 ]; then echo "Running dhclient on $br..." ; sudo dhclient -v $br 2>&1|grep '^DHCPACK' ; else echo -e "${colors[green]}Bridge already existed, not running dhclient -r on it.${colors[none]}" ; fi
@@ -245,7 +271,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   }
 
   echo "PCI:"
-  declare -A -g deviceDrivers # Our cool array
+  declare -A -g deviceDrivers # Array for tracking devices and their driver.
   if ! lsmod|grep -q vfio_pci; then sudo modprobe vfio-pci; fi
   if [ "$?" -ne "0" ]; then echo "Could not modprobe vfio-pci. Please fix this."; exit 1 ; fi
 
@@ -269,7 +295,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       currentDriver="$(lspci -nn -k -s "$buspath" | grep -oP '(?<=driver in use:\ ).*')"
       if ! [ -z "$currentDriver" ]
       then
-        deviceDrivers["$vendorClass"]="$currentDriver" # Add it to our cool array
+        deviceDrivers["$vendorClass"]="$currentDriver" # Add it to the device driver array.
         driver="${deviceDrivers["$vendorClass"]}"
         echo -e "    ${colors[green]}[INFO] Detected driver '$driver' is using this device. It will be re-bound on VM exit.${colors[none]}"
       fi
@@ -290,6 +316,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       echo -e "${colors[green]}    Binding to:\t\t${colors[none]}vfio-pci" ; echo "0x$vendor 0x$class" | sudo tee /sys/bus/pci/drivers/vfio-pci/new_id >/dev/null
       if [ $? -ne 0 ]; then echo -e "    ${colors[red]}Rebind to vfio-pci failed!"; fi
       echo 1 | sudo tee /sys/bus/pci/rescan >/dev/null
+      permissionsManager takeown /dev/vfio/*
     elif [[ $@ == *"vfiobind"* ]] && isDry
     then
       echo -e "    ${colors[green]}[DRY]  Not binding to:\t${colors[none]}vfio-pci"
@@ -479,7 +506,7 @@ then
     mount -t hugetlbfs hugetlbfs -o mode=01770,gid=0 $hugePath && hugeMount=self && hugeArgs="-mem-path $hugePath" # So we can umount later
   fi
   echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null && echo -ne "Memory cache dropped for hugepages...\n"
-  echo -ne "running compact_memory... " ; echo 1 | sudo tee /proc/sys/vm/compact_memory >/dev/null && echo -ne "compact_memory run for hugepages...\n"
+  echo -ne "running compact_memory... " ; echo 1 | sudo tee /proc/sys/vm/compact_memory >/dev/null && echo -ne "OK.\n"
   echo "$pagesRequired" | sudo tee /proc/sys/vm/nr_hugepages >/dev/null ; echo -ne "Giving hugepages a moment to allocate."
   while [ $(readMeminfo HugePages_Free) -lt $pagesRequired ]
   do
@@ -494,6 +521,7 @@ then
     echo -ne "${colors[red]}Error, couldn't allocate all required pages. Please free up memory or check your system.${colors[none]}\n\t${colors[yellow]}(${colors[none]}$HugePages_Free ${colors[yellow]}pages free out of ${colors[none]}$pagesRequired${colors[yellow]} requested. With that the highest value achieved right now is:${colors[none]} -mem $((($HugePages_Free * HugepagesizeMB)))${colors[yellow]})${colors[none]}\n"
     exit 1
   else
+    permissionsManager takeown /dev/hugepages
     echo "Hugepages ready."
   fi
 elif isDry
@@ -516,11 +544,20 @@ if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
   cpuArgs="-cpu host,kvm=off"
   smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
-  if [ ! -z "$imagePath" ] && [ ! -z "$imageFormat" ]; then image="$image,format=$imageFormat" ; fi
-  if [ ! -z "$imagePath" ] ; then coreArgs="$coreArgs -drive file=$imagePath,id=disk" ; else echo -e "${colors[yellow]}-image\t\tnot specified. This VM will run diskless.${colors[none]}\n" ; fi
   coreArgs="$coreArgs -drive if=pflash,format=raw,unit=0,readonly,file=$biosPath"
-    if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
-    if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
+
+  if [ ! -z "$imagePath" ]
+  then
+    if [ ! -z "$imageFormat" ] ; then image="${imagePath},format=$imageFormat" ; else image="${imagePath}" ; fi
+    coreArgs="$coreArgs -drive file=${image},id=disk"
+    permissionsManager takeown ${imagePath}
+  else
+    echo -e "${colors[yellow]}-image\t\tnot specified. This VM will run diskless.${colors[none]}\n"
+  fi
+
+
+  if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
+  if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
 
 networkArgs="-device virtio-net,netdev=network0"
 if [[ ! -z "$bridgeArgs" ]];
@@ -562,15 +599,11 @@ then
   exit 0
 else
   sudo prlimit --pid $$ --memlock=unlimited:unlimited
-  sudo chown $USER /dev/vfio/*
-  sudo chown $USER /dev/hugepages
-  sudo chown $USER ${imagePath}
-  sudo chown $USER /dev/net/tun*
-  set -m # Allow scripted bash job controls (fg bg, etc)
+  set -m # Allow scripted bash job controls (fg, bg, etc)
   echo -ne "Starting qemu now.\n\n"
   qemu-system-x86_64 $coreArgs $hugeArgs $networkArgs $usbArgs $pciArgs &
-  sudo chrt -p 1 -p $!                  # Set qemu to have high priority
-  sudo taskset -cp ${tasksetThreads} $! # Set the permitted host threads
+  sudo chrt -p 1 -p $! >/dev/null                  # Set qemu to have high priority
+  sudo taskset -cp ${tasksetThreads} $! >/dev/null # Set the permitted host threads
   fg
 fi
 
