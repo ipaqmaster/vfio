@@ -414,6 +414,10 @@ do
         imageFormat="$2"
         shift
     ;;
+     -extras)
+        extras="$2"
+        shift
+    ;;
      --help|-help)
         printHelp
     ;;
@@ -461,7 +465,7 @@ else
   else
     echo "This script's -taskset flag only accepts comma delimited threads at the moment such as: 0,1,2,3,4,5,6, or 0,2,4,8 -- Sorry!"
   fi
-fi
+fi 
 
   # Determine guest memory
 if [ -z "$memoryArgs" ]
@@ -553,12 +557,18 @@ if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
     coreArgs="$coreArgs -drive file=${image},id=disk"
     permissionsManager takeown ${imagePath}
   else
-    echo -e "${colors[yellow]}-image\t\tnot specified. This VM will run diskless.${colors[none]}\n"
+    echo -e "${colors[yellow]}-image\t\tnot specified. This VM will run diskless.${colors[none]}"
   fi
-
 
   if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
   if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
+
+if [ ! -z "$extras" ]
+then
+  echo -e "${colors[green]}-extras\t\tspecified, we'll start qemu with these extra arguments:${colors[none]}\t$extras"
+fi
+
+echo '' # Section separation echo
 
 networkArgs="-device virtio-net,netdev=network0"
 if [[ ! -z "$bridgeArgs" ]];
@@ -593,16 +603,17 @@ then
   echo "---------------------"
   echo "Here are the completed args from this DRY run:"
   echo -e "Core:\n${colors[blue]} $coreArgs $hugeArgs${colors[none]}"
-  if [ ! -z "$networkArgs" ]; then echo -e "Net :\n${colors[blue]} $networkArgs${colors[none]}" ; fi
-  if [ ! -z "$usbArgs" ] ; then echo -e "USB :\n${colors[blue]} $usbArgs${colors[none]}" ; fi
-  if [ ! -z "$pciArgs" ] ; then echo -e "PCI :\n${colors[blue]}$pciArgs${colors[none]}" ; fi
+  if [ ! -z "$networkArgs" ]; then echo -e "Net :\n${colors[blue]}${networkArgs}${colors[none]}" ; fi
+  if [ ! -z "$usbArgs" ] ;    then echo -e "USB :\n${colors[blue]}${usbArgs}${colors[none]}"     ; fi
+  if [ ! -z "$pciArgs" ] ;    then echo -e "PCI :\n${colors[blue]}${pciArgs}${colors[none]}"     ; fi
+  if [ ! -z "$extras" ] ;     then echo -e "Extras:\n${colors[blue]}${extras}${colors[none]}"    ; fi
   echo -ne "\nRun the script with the same arguments again and include ${colors[red]}-run${colors[none]} to actually pass these to qemu-system-x86_64\n"
   exit 0
 else
   sudo prlimit --pid $$ --memlock=unlimited:unlimited
   set -m # Allow scripted bash job controls (fg, bg, etc)
   echo -ne "Starting qemu now.\n\n"
-  qemu-system-x86_64 $coreArgs $hugeArgs $networkArgs $usbArgs $pciArgs &
+  qemu-system-x86_64 $coreArgs $hugeArgs $networkArgs $usbArgs $pciArgs $extras &
   sudo chrt -p 1 -p $! >/dev/null                  # Set qemu to have high priority
   sudo taskset -cp ${tasksetThreads} $! >/dev/null # Set the permitted host threads
   fg
