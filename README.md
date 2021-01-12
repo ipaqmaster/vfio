@@ -112,7 +112,7 @@ Using example 2:
 `-usb 'AT2020USB|SteelSeries|Ducky|Xbox|1425:5769'`
 
    If set, the script enumerates `lsusb` with this regex and generates qemu arguments for passing them through when the VM starts.
-   
+
 This example would catch any:
      
 1. Audio-Techinica AT2020 (USB Microphone+headphone DAC)
@@ -142,11 +142,6 @@ This example would catch any:
    The taskset argument will take the threads you give it and only lets the VM execute on those threads. It also creates only that many threads on the VM. (6 and 4 in the examples respectively)
    This can significantly reduce latency if the guestis having trouble, even if you haven't configured any host pinning.
 
-`-run`
-
-  Actually run. The script runs dry without this flagrun and tries to output as much helpful info as it can.
-    Especially useful for testing PCI regexes without unbinding things first try, but good for general safety.
-
 `-colortest`
 
   A quick terminal color test then exits.
@@ -154,6 +149,16 @@ This example would catch any:
 `-iommugroups` / `-iommugrouping`
 
   Prints IOMMU groupings if available then exists.
+
+`-extras '-device xyz -device abc -device ac97 -display gtk -curses'`
+
+   If set adds extra arbitrary commands to the cmdline of qemu (Once invoked)
+   Useful for `-device ac97` to get some quick and easy audio support if the host is running pulseaudio.
+   
+`-run`
+
+  Actually run. The script runs dry by default and outputs qemu arguments and environment information without this flag.
+  Especially useful for testing PCI regexes without unbinding things first try, but good for general safety.
 
 ## Notes and Gotchas.
   - If you don't set any `-usb` or `-pci` arguments the VM will run in a window on your desktop as is normal for Qemu. Useful for testing the VM actually boots, installing OSes or using liveCDs.
