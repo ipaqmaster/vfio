@@ -102,6 +102,9 @@ Using example 2:
    Try to mount (if not already) and allocate some hugepages based on the VM's total memory defined with -memory (or default).
    If successful, qemu is given the arguments to use it. Gets unallocated after VM exit in the cleanup routine.
 
+`-hyperv`
+   Enable hyper-v enlightenments for nested virtualization. For some cases this may help convince more invasive Anti-cheats to play along. You will need to enable (tick) the HyperV Windows Feature and reboot when it asks before this will work though.
+
 `-bios '/path/to/that.fd'`
 
    An optional bios path. If not set the script will try `/usr/share/ovmf/x64/OVMF_CODE.fd` if available.

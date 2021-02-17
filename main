@@ -417,6 +417,10 @@ do
         extras="$2"
         shift
     ;;
+     -hyperv)
+	hyperv='enabled'
+	shift
+    ;;
      --help|-help)
         printHelp
     ;;
@@ -554,13 +558,19 @@ if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
   machineArgs="-machine q35,accel=kvm,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
 
   cpuArgs="-cpu host,kvm=off"
+  if [ ! -z "$hyperv" ]
+  then
+    echo -e "${colors[green]}-hyperv\t\tspecified, HyperV Enlightenments will be enabled for this run.{$colors[none]}"
+    cpuArgs="${cpuArgs},hv-frequencies,hv-relaxed,hv-reset,hv-runtime,hv-spinlocks=0x1fff,hv-stimer,hv-synic,hv-time,hv-vapic,hv-vpindex"
+  fi
+
   smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
   coreArgs="$coreArgs -drive if=pflash,format=raw,unit=0,readonly,file=$biosPath"
 
 if [[ ! -z "${!disks[@]}" ]]
 then
-  echo -e "${colors[green]}-image(s) specified, using disks this run.${colors[none]}"
+  echo -e "${colors[green]}-image(s)\tspecified, using disks this run.${colors[none]}"
 else
   echo -e "${colors[yellow]}-image\t\tnot specified. This VM will run diskless.${colors[none]}"
 fi
