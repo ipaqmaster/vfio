@@ -363,11 +363,8 @@ do
        unset colors # Pretty simple color killer.
     ;;
     -iommugroups|-iommugrouping)
-      echo -e "${colors[green]}Ok, printing IOMMU Groups then exiting...${colors[none]}"
-      iommuDir="/sys/kernel/iommu_groups";
-      if [ -d $iommuDir ]; then for g in `ls -1v $iommuDir`; do echo "IOMMU Group $g"; for d in $iommuDir/$g/devices/* ; do echo -e "${colors[cyan]}\t$(lspci -nns ${d##*/})${colors[none]}"; done; done ; else echo "Couldn't find $iommuDir" ; fi
-      exit $?
-    ;; 
+      printIOMMU=1
+   ;; 
     -bridge)
        bridgeArgs="$(sed 's/,/ /g' <<<$2)"
        shift
@@ -395,7 +392,7 @@ do
        DRY="0"
     ;;
      -iso)
-        iso="$2"
+	isos=(${isos[@]} $2)
         shift
     ;;
      -bios)
@@ -407,11 +404,13 @@ do
         shift
     ;;
      -image)
-        imagePath="$2"
+	declare -A disks
+        disks[$2]='' # Declare disk
+        latestDisk="$2"
         shift
     ;;
      -imageformat|-format)
-        imageFormat="$2"
+	if [ ! -z "$latestDisk" ]; then disks[$latestDisk]="$2" ; fi # Add the format for the most recently declared disk
         shift
     ;;
      -extras)
@@ -434,6 +433,14 @@ done
 #|  __/| | |  __/_____|  _| | | | (_| | | | | |_ 
 #|_|   |_|  \___|     |_|   |_|_|\__, |_| |_|\__|
 #                                |___/
+
+if [ "$printIOMMU" = "1" ]
+then
+  echo -e "${colors[green]}Ok, printing IOMMU Groups then exiting...${colors[none]}"
+  iommuDir="/sys/kernel/iommu_groups";
+  if [ -d $iommuDir ]; then for g in `ls -1v $iommuDir`; do echo "IOMMU Group $g"; for d in $iommuDir/$g/devices/* ; do echo -e "${colors[cyan]}\t$(lspci -nns ${d##*/})${colors[none]}"; done; done ; else echo "Couldn't find $iommuDir" ; fi
+  exit $?
+fi
 
 if isDry
 then
@@ -551,17 +558,34 @@ if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
   coreArgs="$coreArgs -drive if=pflash,format=raw,unit=0,readonly,file=$biosPath"
 
-  if [ ! -z "$imagePath" ]
-  then
-    if [ ! -z "$imageFormat" ] ; then image="${imagePath},format=$imageFormat" ; else image="${imagePath}" ; fi
-    coreArgs="$coreArgs -drive file=${image},id=disk"
-    permissionsManager takeown ${imagePath}
-  else
-    echo -e "${colors[yellow]}-image\t\tnot specified. This VM will run diskless.${colors[none]}"
-  fi
+if [[ ! -z "${!disks[@]}" ]]
+then
+  echo -e "${colors[green]}-image(s) specified, using disks this run.${colors[none]}"
+else
+  echo -e "${colors[yellow]}-image\t\tnot specified. This VM will run diskless.${colors[none]}"
+fi
 
-  if [ ! -z $iso  ]  ;then coreArgs="$coreArgs -cdrom $iso" ; fi
-  if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
+for disk in ${!disks[@]}
+do
+  diskCounter=$((($diskCounter+1)))
+  if [ ! -z "${disks[$disk]}" ]; then diskFormat=",format=${disks[$disk]}"; else unset diskFormat ; fi
+  echo -e "\t\t${colors[none]}disk${diskCounter} ${colors[blue]}${disk}${diskFormat}${colors[none]}"
+  permissionsManager takeown ${disk}
+  coreArgs="$coreArgs -drive file=$disk,id=disk${diskCounter}${diskFormat}"
+done
+
+if [ ! -z "$isos" ]
+then
+  echo -e "${colors[green]}-iso(s)\tattached${colors[none]}"
+  for iso in ${isos[@]}
+  do
+    isoCounter=$((($isoCounter+1)))
+    echo -e "\t\tcd${isoCounter}   ${colors[blue]}$iso${colors[none]}"
+    coreArgs="$coreArgs -drive file=${iso},index=${isoCounter},media=cdrom"
+  done
+fi
+
+if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
 
 if [ ! -z "$extras" ]
 then
