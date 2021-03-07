@@ -577,11 +577,11 @@ fi
 
 for disk in ${!disks[@]}
 do
-  diskCounter=$((($diskCounter+1)))
+  ioCounter=$((($ioCounter+1)))
   if [ ! -z "${disks[$disk]}" ]; then diskFormat=",format=${disks[$disk]}"; else unset diskFormat ; fi
-  echo -e "\t\t${colors[none]}disk${diskCounter} ${colors[blue]}${disk}${diskFormat}${colors[none]}"
+  echo -e "\t\t${colors[none]}${ioCounter}  ${colors[blue]}${disk}${diskFormat}${colors[none]}"
   permissionsManager takeown ${disk}
-  coreArgs="$coreArgs -drive file=$disk,id=disk${diskCounter}${diskFormat}"
+  coreArgs="$coreArgs -drive file=$disk,if=none,id=drive${ioCounter}${diskFormat} -device virtio-blk-pci,drive=drive${ioCounter},id=virtio${ioCounter}"
 done
 
 if [ ! -z "$isos" ]
@@ -589,9 +589,9 @@ then
   echo -e "${colors[green]}-iso(s)\tattached${colors[none]}"
   for iso in ${isos[@]}
   do
-    isoCounter=$((($isoCounter+1)))
-    echo -e "\t\tcd${isoCounter}   ${colors[blue]}$iso${colors[none]}"
-    coreArgs="$coreArgs -drive file=${iso},index=${isoCounter},media=cdrom"
+    ioCounter=$((($ioCounter+1)))
+    echo -e "\t\t${ioCounter}  ${colors[blue]}$iso${colors[none]}"
+    coreArgs="$coreArgs -drive file=${iso},index=${ioCounter},media=cdrom"
   done
 fi
 
