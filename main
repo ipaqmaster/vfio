@@ -74,6 +74,10 @@ function printHelp {
   echo -e "    Try to mount & allocate hugepages for qemu with the -mem specified."
   echo -e "    (May want to specify -mem for this. Half of host ram may be too much.)\n"
 
+  echo -e "  ${colors[cyan]}-hyperv${colors[none]}"
+  echo -e "    Enable hyper-v enlightenments for nested virtualization."
+  echo -e "    Can help invasive anticheats play along however HyperV will need to be enabled in the guest's Features"
+
   echo -e "  ${colors[cyan]}-usb 'SteelSeries|Keyboard|Xbox|1234:5678'${colors[none]}"
   echo -e "    A regex for lsusb parsing. Can be anything that matches a specific device line\n"
 
