@@ -315,7 +315,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     if [[ $@ == *"vfiobind"* ]] && ! isDry
     then
       echo -e "${colors[green]}    Binding to:\t\t${colors[none]}vfio-pci" ; echo "0x$vendor 0x$class" | sudo tee /sys/bus/pci/drivers/vfio-pci/new_id >/dev/null
-      if [ $? -ne 0 ]; then echo -e "    ${colors[red]}Rebind to vfio-pci failed!"; fi
+      if [ $? -ne 0 ]; then echo -e "    ${colors[red]}Rebind to vfio-pci failed!${colors[none]}"; fi
       echo 1 | sudo tee /sys/bus/pci/rescan >/dev/null
       permissionsManager takeown /dev/vfio/${iommuGroup}
     elif [[ $@ == *"vfiobind"* ]] && isDry
@@ -581,7 +581,7 @@ do
   if [ ! -z "${disks[$disk]}" ]; then diskFormat=",format=${disks[$disk]}"; else unset diskFormat ; fi
   echo -e "\t\t${colors[none]}${ioCounter}  ${colors[blue]}${disk}${diskFormat}${colors[none]}"
   permissionsManager takeown ${disk}
-  coreArgs="$coreArgs -drive file=$disk,if=none,id=drive${ioCounter}${diskFormat} -device virtio-blk-pci,drive=drive${ioCounter},id=virtio${ioCounter}"
+  coreArgs="$coreArgs -drive file=$disk,if=none,discard=on,id=drive${ioCounter}${diskFormat} -device virtio-blk-pci,drive=drive${ioCounter},id=virtio${ioCounter}"
 done
 
 if [ ! -z "$isos" ]
