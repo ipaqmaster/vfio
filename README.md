@@ -45,11 +45,9 @@ Modern IOMMU Support has made playing incompatible titles with ease.
 
 With a second GPU present the Looking Glass project could be implemented; leaving the VM headless instead. (This flag is being worked on)
 
-# The script, arguments, and examples 
+# The script, arguments, examples and an installation example
 
-Arguments this script will take [and script Gotchas]
-
-## Arguments
+## General usage arguments
 
 `-image /dev/zvol/zpoolName/windows -imageformat raw`
 
@@ -103,6 +101,7 @@ Using example 2:
    If successful, qemu is given the arguments to use it. Gets unallocated after VM exit in the cleanup routine.
 
 `-hyperv`
+
    Enable hyper-v enlightenments for nested virtualization. For some cases this may help convince more invasive Anti-cheats to play along. You will need to enable (tick) the HyperV Windows Feature and reboot when it asks before this will work though.
 
 `-bios '/path/to/that.fd'`
@@ -173,6 +172,34 @@ This example would catch any:
         This is very useful if the host has enough load to interupt the VM during normal operation.
         If your host doesn't have the cpu load headroom for a gaming guest or the VM experiences stuttering, Consider using -taskset to isolate guest cores.
         
+## Getting started with a fresh Win10 install
+
+I recommend starting the install as an X window then doing passthrough once the guest is ready, however some GPU setups aren't phased by the guest having no drivers in certain scenarios allowing you to pass through your devices from the beginning and install all the drivers from inside the VM *during* GPU Passthrough if desired.
+
+The below instructions will just use an X window in your display-manager for setting things up.
+
+1. Get the latest virtio ISO as drivers for the VM: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/
+
+2. Get the latest Win10 ISO from Microsoft: https://www.microsoft.com/en-au/software-download/windows10ISO
+
+3. Create storage for your VM, this may involve commands like the below:
+
+     `qemu-img create -f qcow2 myWin10VM.qcow2 100G # classic sparse qcow2`
+
+     `dd if=/dev/zero of=myvm.img bs=1G count=100   # Preallocated raw example with DD`
+
+     `zfs create -V100G myPool/myVMDisk             # zfs backed virtual block-device (ZVOL)`
+
+4. Start the script following something like the below example:
+
+     `./main -image /dev/zvol/myPool/myVMDisk -imageformat raw -iso ~/Downloads/Win10_20H2_v2_English_x64.iso -iso /nas/common/ISOs/virtio-win-0.1.189.iso`
+
+5. Have your serial key ready to install Windows and if it can't see the virtual drive you specified with -image just load the drivers from the virtio ISO you also passed through.
+
+6. Once at your Windows VM's desktop, Install VirtIO so features like networking can kick in. Also install the video drivers for your card (Such as Nvidia), and any others you might need.
+
+7. Shut the VM down and try again without the ISOs and try using -pci to pass through some devices from the host (and optional -usb arguments if you aren't already passing the entire pci usb controller too)
+
 ## Examples
 
 Note: I've omitted `-run` from these so they remain a dry-run.
