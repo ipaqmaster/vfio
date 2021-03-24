@@ -5,7 +5,7 @@
 A bash script that starts my Win10 VM directly with `qemu-system-x86_64` but automatically handles optional network bridging, hugepage allocation, USB passthrough arguments and PCI device rebinding + arguments (+ rebinding back to drivers when done) for minimizing my headaches.
 
 It makes starting the Win10 vm quick and easy then sends me back to the lightdm login screen once it shuts down.
-Hoping the script helpful to others as I continiously tinker with it. Plan to add dual GPU support (one for host, one for guest) once I dust my old  PC off.
+Hoping the script can be helpful to others as I continiously tinker with it. Plan to add dual GPU support (one for host, one for guest) once I dust my old PC off.
 
 ## What does it do
 
