@@ -216,5 +216,5 @@ If a host has been booted with isolated cores you can tell the script to pin the
 An example run with passthrough could look like:
   `./main -image /dev/zvol/poolName/windows,format=raw -bridge br0,eth0,tap0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'`
   
-  This example would  would (if seen) pass all regex-matching USB and PCI devices and rebind the PCI devices if applicable.
+  This example would (if seen) pass all regex-matching USB and PCI devices and rebind the PCI devices if applicable.
 It would also provision network bridge br0 and attach tap0 to the bridge with your host interface. Then give tap0 to the VM.
