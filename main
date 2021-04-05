@@ -375,7 +375,6 @@ do
     ;;
     -nonet)
        noNet=1
-       shift
     ;;
      -memory|-mem)
        memoryArgs="$2"
@@ -423,7 +422,6 @@ do
     ;;
      -hyperv)
 	hyperv='enabled'
-	shift
     ;;
      --help|-help)
         printHelp
