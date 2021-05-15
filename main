@@ -320,6 +320,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     then
       echo -e "${colors[green]}    Binding to:\t\t${colors[none]}vfio-pci" ; echo "0x$vendor 0x$class" | sudo tee /sys/bus/pci/drivers/vfio-pci/new_id >/dev/null
       if [ $? -ne 0 ]; then echo -e "    ${colors[red]}Rebind to vfio-pci failed!${colors[none]}"; fi
+      sleep 1
       echo 1 | sudo tee /sys/bus/pci/rescan >/dev/null
       permissionsManager takeown /dev/vfio/${iommuGroup}
     elif [[ $@ == *"vfiobind"* ]] && isDry
@@ -330,10 +331,11 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     then
       if ! [ -z "$driver" ]
       then
-        echo -e "${colors[green]}    Rebinding $vendorClass to driver:\t${colors[none]}$driver"
+        echo -e "${colors[green]}    Rebinding $vendorClass back to driver:\t${colors[none]}$driver"
+        echo "0x$vendor 0x$class" | sudo tee /sys/bus/pci/drivers/vfio-pci/remove_id >/dev/null
 	echo "$buspath" | sudo tee /sys/bus/pci/devices/$buspath/driver/unbind >/dev/null
 	echo "$buspath" | sudo tee /sys/bus/pci/drivers/$driver/bind >/dev/null
-	if [ "$?" -eq "0" ]; then echo -e "${colors[green]}    Successfully rebound to:\t\t${colors[none]}$driver" ; else echo -e "${colors[red]}    Was unable to rebind it to $driver."; fi
+	if [ "$?" -eq "0" ]; then echo -e "${colors[green]}    Successfully rebound.${colors[none]}" ; else echo -e "${colors[red]}    Was unable to rebind it to $driver."; fi
       fi
     fi
 
