@@ -149,6 +149,11 @@ This example would catch any:
 
   Prints IOMMU groupings if available then exists.
 
+`-looking-glass` / `-lookingglass` / `-lg`
+
+  Adds a 64MB shared memory module for the Looking Glass project and a spice server onto the guest for input from host during Looking Glass usage.
+  You will still need to go into your VM add the VirtIO IVSHMEM driver to the "PCI standard RAM Controller" which appears in Device Manager under System Devices before Looking Glass will function.
+
 `-extras '-device xyz -device abc -device ac97 -display gtk -curses'`
 
    If set adds extra arbitrary commands to the cmdline of qemu (Once invoked)
