@@ -95,10 +95,11 @@ Using example 2:
    Set how much memory the VM gets for this run. Argument assumes megabytes unless you explicitly use a suffix like K, M, or G.
      If this argument isn't specified the default value is HALF of the host total.
 
-`-hugepages / -huge`
+`-hugepages / -huge / -hugepages /optional/mountpoint/to/custom/hugepage`
 
-   Try to mount (if not already) and allocate some hugepages based on the VM's total memory defined with -memory (or default).
-   If successful, qemu is given the arguments to use it. Gets unallocated after VM exit in the cleanup routine.
+   Tries to allocate hugepages for the VM based on it's total memory defined with -memory. Hugepages for a VM with frequent random memory access such as gaming contexts can be much snappier than your regular process doing the same thing across many small pages.
+   If no argument is given it'll use /dev/hugepages which is often 2MB per page. The script drops host memory cache and then compact_memory before allocating to aim for less hugepage fragmentation and will clean up after itself by setting pages back to 0 to reclaim memory for the host to use later.
+   Also supports preallocation, so if you reserved some 1GB pages at boot time and mounted a pagesize=1G hugetlbfs to some directory, specifying that can skip the above line if there's enough for the VM to use. Allocating hugepages at boot time sacrifices a lot of memory but doing it so early prevents fragmentation.
 
 `-hyperv`
 
@@ -158,6 +159,11 @@ This example would catch any:
 
    If set adds extra arbitrary commands to the cmdline of qemu (Once invoked)
    Useful for `-device ac97` to get some quick and easy audio support if the host is running pulseaudio.
+
+`-romfile/-vbios /path/to/vbios.bin`
+   Accepts a file path to a rom file to use on any detected GPU during -pci argument processing.
+   You should check the vbios dump you're about to use is safe before using it on a GPU, rom-parser is a good project for this.
+   Otherwise you can often download your model's vbios from TechPowerup and patch it with a project like NVIDIA-vBIOS-VFIO-Patcher before using it.
    
 `-run`
 
