@@ -415,10 +415,25 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   if [[ $var == *"vfiobind"* ]] ; then echo -ne "Here are the completed pciArgs:\n    $pciArgs"; fi
 }
 
+function checkVcpuCount {
+  for child in /proc/$1/task/* ; do if grep -q CPU $child/comm; then echo $(basename $child) ; fi ; done
+}
+
 function pinVcpus {
-  sleep 1 # Bad wait sleep for child threads to spawn
-  if grep -Eq '[0-9]+' <<< $1
-  then 
+  if [ -d /proc/$1 ]
+  then
+      # First, this function will wait for all threads to be accounted for. 
+      expectedVcpus=$(echo ${vcpuArray[@]} | wc -w)
+      timeout=15 ; timer=0 ; foundVcpus=$(checkVcpuCount $1| wc -l)
+      while [ $foundVcpus -lt $expectedVcpus ] && [ $timer -lt $timeout ] 
+      do
+        foundVcpus=$(checkVcpuCount $1| wc -l)
+	timer=$((($timer + 1)))
+	printer "${colors[yellow]}Waiting for vcpus to wake up... $foundVcpus found."
+        sleep 1 
+      done 
+    if [ $timer -eq $timeout ] ; then printer "${colors[red]}The vcpus did not wake up in time. This will happen on large qemu launches or slower systems but pinning failed." ; fi
+      
     threadPinList=$(for child in /proc/$1/task/* ; do if grep -q CPU $child/comm; then echo $(basename $child) ; fi ; done)
     printer "Successfully found $(wc -l <<< $threadPinList) vCPUs on the guest."
     vcpuPosition=0
@@ -426,6 +441,7 @@ function pinVcpus {
     do
       printer "${colors[green]}Pinning vCPU $vcpuPosition to host core ${vcpuArray[$vcpuPosition]}"
       sudo taskset -cp ${vcpuArray[$vcpuPosition]} $vcpuPid >/dev/null # Pin this vcpu to a host thread.
+      sudo chrt -f -p $1 >/dev/null                  # Use FIFO scheduling on qemu vcpu's threads
       vcpuPosition=$((($vcpuPosition + 1)))
 
     done <<< "$threadPinList" 
@@ -807,11 +823,10 @@ else
   sudo prlimit --pid $$ --memlock=unlimited:unlimited
   set -m # Allow scripted bash job controls (fg, bg, etc)
   echo -ne "Starting qemu now.\n\n"
-  qemu-system-x86_64 $coreArgs $hugeArgs $networkArgs $usbArgs $pciArgs $lgArgs $extras &
+  qemu-system-x86_64 -nodefaults $coreArgs $hugeArgs $networkArgs $usbArgs $pciArgs $lgArgs $extras &
   sudo chrt -p 1 -p $! >/dev/null                  # Set qemus threads to have high priority
-  sudo chrt -f   -p $! >/dev/null                  # Use FIFO scheduling on all qemu's threads
   if [ ! -z $vcpuPinningAfterQemuStart ]; then pinVcpus $! ; fi
-  fg
+  fg # Bring qemu console into foreground
 fi
 
 
