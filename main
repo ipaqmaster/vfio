@@ -92,8 +92,8 @@ function printHelp {
   printer "  ${colors[cyan]}-romfile/-vbios path-to-vbios.bin"
   printer "    Accepts a file path to a rom file to use on any detected GPU during -pci argument processing. You should check the vbios dump you're about to use is safe before using it on a GPU, rom-parser is a good project for this.\n"
 
-  printer "  ${colors[cyan]}-taskset 0,1,2,3,4,5,6${colors[cyan]} / ${colors[cyan]}-taskset 0,2,4,8"
-  printer "    A comma delimited list of host threads the Guest is allowed to execute on."
+  printer "  ${colors[cyan]}-pinvcpus 0,1,2,3,4,5,6${colors[cyan]} / ${colors[cyan]}-pinvcpus 0,2,4,8"
+  printer "    A comma delimited list of host threads the Guest's vcpus are allowed to execute on."
   printer "    (Setting this also shapes the guest CPU topology to match.)"
   printer "    If you've configured core isolation on the host, this is the argument for you!\n"
 
@@ -415,6 +415,24 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   if [[ $var == *"vfiobind"* ]] ; then echo -ne "Here are the completed pciArgs:\n    $pciArgs"; fi
 }
 
+function pinVcpus {
+  sleep 1 # Bad wait sleep for child threads to spawn
+  if grep -Eq '[0-9]+' <<< $1
+  then 
+    threadPinList=$(for child in /proc/$1/task/* ; do if grep -q CPU $child/comm; then echo $(basename $child) ; fi ; done)
+    printer "Successfully found $(wc -l <<< $threadPinList) vCPUs on the guest."
+    vcpuPosition=0
+    while read vcpuPid
+    do
+      printer "${colors[green]}Pinning vCPU $vcpuPosition to host core ${vcpuArray[$vcpuPosition]}"
+      sudo taskset -cp ${vcpuArray[$vcpuPosition]} $vcpuPid >/dev/null # Pin this vcpu to a host thread.
+      vcpuPosition=$((($vcpuPosition + 1)))
+
+    done <<< "$threadPinList" 
+  fi
+}
+
+
 #    _                  
 #   / \   _ __ __ _ ___ 
 #  / _ \ | '__/ _` / __|
@@ -473,8 +491,8 @@ do
         biosPath="$2"
         shift
     ;;
-     -taskset)
-        tasksetThreads="$2"
+     -pinvcpus)
+        vcpuThreads="$2"
         shift
     ;;
      -image)
@@ -537,24 +555,27 @@ fi
   # Check IOMMU is active and grouping things.
 if [ -z "$(find /sys/class/iommu/ -type l)" ]; then echo -ne "IOMMU isn't loaded?\n  For an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader.\n  If you're on an AMD machine instead add these two: 'iommu=pt iommu=1'\n\n  If you've already done this and rebooted, your host may not be compatible or some relevant bios settings could be disabled.\n  Feel free to ask about this in case it's a script fault.\n" ; exit 1; fi
 
-  # Determine Host cpu cores/threads and what the guest gets based on -taskset (if specified).
+  # Determine Host cpu cores/threads and what the guest gets based on -pinvcpus (if specified).
 hostThreads=$(grep -Pom1 'siblings.*\ \K([0-9]+)$' /proc/cpuinfo )
   hostCores=$(grep -Pom1 'cpu cores.*\ \K([0-9]+)$' /proc/cpuinfo)
-  if [ "$((($hostCores * 2)))" == "$hostThreads" ]; then hostIsThreaded=1; fi
+  if [ "$((($hostCores * 2)))" == "$hostThreads" ]; then hostIsHT=1; fi #hyperthreading check
 
-if [ -z "$tasksetThreads" ]
+if [ -z "$vcpuThreads" ] # vcpu pinning
 then
-  guestCores=$hostCores ; if [ ! -z $hostIsThreaded ]; then guestThreads=2; else guestThreads=1; fi
-  printer "${colors[yellow]}-taskset\tnot specified, guest gets full host CPU:\t${colors[none]}($hostCores) with ($hostThreads) threads."
+  guestCores=$hostCores ; if [ ! -z $hostIsHT ]; then guestThreads=2; else guestThreads=1; fi
+  printer "${colors[yellow]}-pinvcpus\tnot specified, guest will execute on full host CPU without any pinning:\t${colors[none]}($hostCores) with ($hostThreads) threads."
 else
-  if grep -qE '^([0-9]|,)+$' <<< $tasksetThreads
+  if grep -qE '^([0-9]|,)+$' <<< $vcpuThreads
   then
-	  printer "${colors[green]}-taskset\tspecified, Guest will run on host CPU threads:\t$tasksetThreads"
-    OLDIFS="$IFS" ; IFS=, ; tasksetCount=$(echo $tasksetThreads| wc -w) ; IFS="$OLDIFS"
-      # Check if specified -taskset thread count is divisible by 2. Use hyperthreading/smt if supported
-    if (( $tasksetCount % 2 == 0 )) && [ "$hostIsThreaded" == "1" ] ; then guestCores=$((( $tasksetCount / 2 ))) ; guestThreads=2; else guestCores=$tasksetCount ; guestThreads=1 ; fi
+    printer "${colors[green]}-pinvcpus\tspecified, Guest will run on host CPU threads:\t$vcpuThreads"
+    # Make an array for later reference
+    OLDIFS="$IFS" ; IFS=', ' vcpuArray=($(echo $vcpuThreads)) ; IFS="$OLDIFS"
+    vcpuCount=$(wc -w <<<${vcpuArray[*]})
+      # Check if specified -pinvcpus thread count is divisible by 2. Use hyperthreading/smt if supported
+    if (( $vcpuCount % 2 == 0 )) && [ "$hostIsHT" == "1" ] ; then guestCores=$((( $vcpuCount / 2 ))) ; guestThreads=2; else guestCores=$vcpuCount ; guestThreads=1 ; fi
+  vcpuPinningAfterQemuStart=1
   else
-    echo "This script's -taskset flag only accepts comma delimited threads at the moment such as: 0,1,2,3,4,5,6, or 0,2,4,8 -- Sorry!"
+    echo "This script's -pinvcpus flag only accepts comma delimited threads at the moment such as: 0,1,2,3,4,5,6, or 0,2,4,8 -- Sorry!"
   fi
 fi 
 
@@ -787,9 +808,9 @@ else
   set -m # Allow scripted bash job controls (fg, bg, etc)
   echo -ne "Starting qemu now.\n\n"
   qemu-system-x86_64 $coreArgs $hugeArgs $networkArgs $usbArgs $pciArgs $lgArgs $extras &
-  sudo chrt -p 1 -p $! >/dev/null                  # Set qemu to have high priority
-  sudo chrt -f   -p $! >/dev/null                  # Use FIFO scheduling on qemu
-  sudo taskset -cp ${tasksetThreads} $! >/dev/null # Set the permitted host threads
+  sudo chrt -p 1 -p $! >/dev/null                  # Set qemus threads to have high priority
+  sudo chrt -f   -p $! >/dev/null                  # Use FIFO scheduling on all qemu's threads
+  if [ ! -z $vcpuPinningAfterQemuStart ]; then pinVcpus $! ; fi
   fg
 fi
 
