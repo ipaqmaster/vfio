@@ -667,7 +667,7 @@ if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
 # Put core QEMU arguments together
 
   machineArgs="-machine q35,accel=kvm,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
-  cpuArgs="-cpu host,kvm=off"
+  cpuArgs="-cpu host,kvm=on,topoext=on"
 
   if [ ! -z "$hyperv" ]
   then
@@ -677,6 +677,7 @@ if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
 
   smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
+  coreArgs="$coreArgs -name $(basename $0),debug-threads=on"
   coreArgs="$coreArgs -drive if=pflash,format=raw,unit=0,readonly=on,file=$biosPath"
 
 if [[ ! -z "${!disks[@]}" ]]
@@ -692,7 +693,7 @@ do
   if [ ! -z "${disks[$disk]}" ]; then diskFormat=",format=${disks[$disk]}"; else unset diskFormat ; fi
   printer "\t\t${ioCounter}  ${colors[blue]}${disk}${diskFormat}"
   permissionsManager takeown ${disk}
-  coreArgs="$coreArgs -drive file=$disk,if=none,discard=on,id=drive${ioCounter}${diskFormat} -device virtio-blk-pci,drive=drive${ioCounter},id=virtio${ioCounter}"
+  coreArgs="$coreArgs -drive file=$disk,if=none,discard=on,id=drive${ioCounter}${diskFormat} -device virtio-blk-pci,drive=drive${ioCounter},id=virtio${ioCounter},iothread=iothread${ioCounter} -object iothread,id=iothread${ioCounter}"
 done
 
 if [ ! -z "$isos" ]
@@ -787,6 +788,7 @@ else
   echo -ne "Starting qemu now.\n\n"
   qemu-system-x86_64 $coreArgs $hugeArgs $networkArgs $usbArgs $pciArgs $lgArgs $extras &
   sudo chrt -p 1 -p $! >/dev/null                  # Set qemu to have high priority
+  sudo chrt -f   -p $! >/dev/null                  # Use FIFO scheduling on qemu
   sudo taskset -cp ${tasksetThreads} $! >/dev/null # Set the permitted host threads
   fg
 fi
