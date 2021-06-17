@@ -400,7 +400,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
 
     if gpuCheck $fullBuspath
     then
-      printer "${colors[green]}    This appears to be a GPU.\t"
+      printer "${colors[green]}    This appears to be a GPU.\t" && guestGetsGPU=1
       if [ ! -z "$romfilePath" ] && [ -f "$romfilePath" ]
       then
         printer "${colors[green]}    Romfile will be passed to the GPU on VM start.\t"
@@ -441,7 +441,7 @@ function pinVcpus {
     do
       printer "${colors[green]}Pinning vCPU $vcpuPosition to host core ${vcpuArray[$vcpuPosition]}"
       sudo taskset -cp ${vcpuArray[$vcpuPosition]} $vcpuPid >/dev/null # Pin this vcpu to a host thread.
-      sudo chrt -f -p $1 >/dev/null                  # Use FIFO scheduling on qemu vcpu's threads
+      sudo chrt -p -f 20 $vcpuPid >/dev/null # Use FIFO scheduling on qemu vcpu threads.
       vcpuPosition=$((($vcpuPosition + 1)))
 
     done <<< "$threadPinList" 
@@ -653,13 +653,13 @@ then
     printer "${colors[red]}\t\tPanicking."
     exit 1
   fi
-  hugepageSize="$(grep $hugePath /proc/mounts | grep -Po '(?<=pagesize=).+[A-Z]')"
+  hugepageSize="$(grep $hugePath /proc/mounts | grep -Po '(?<=pagesize=).+[A-Z]' | tail -n1)"
   if [[ "$hugepageSize" =~ 'M' ]]
   then
     hugepageSizeMB="$(grep -Eo '[0-9]+' <<< $hugepageSize)"
   elif [[ "$hugepageSize" =~ 'G' ]]
   then
-    hugepageSizeMB="$(grep -Eo '[0-9]+' * 1024 ))) <<< $hugepageSize"
+    hugepageSizeMB="((($(grep -Eo '[0-9]+' <<< $hugepageSize) * 1024)))"
   else
     printer "${color[red]}\t\tSomething went wrong, I was unable to determine ${hugePath}'s hugepage size via the mountpoint. Panicking." ; exit 1
   fi
@@ -754,8 +754,6 @@ then
   sleep 3
 fi
 
-if [[ ! -z "$usbREGEX" ]] && [[ ! -z "$pciREGEX" ]] || [[ -z "$DISPLAY" ]] ; then coreArgs="$coreArgs -nographic -vga none" ; fi # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
-
 if [ ! -z "$lookingglass" ]
 then
   printer "${colors[green]}-lookingglass\tspecified, we'll start qemu with a spice server and shared memory for it."
@@ -799,6 +797,28 @@ if [ ! -z "$pciREGEX" ]; then pciREGEX=$(regexCleanup "$pciREGEX") ; fi
 
 if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
 if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; fi
+
+
+  # Must do this after enumerating a PCI regex as it checks for GPUs first.
+  # Create a display spicey display only if
+  # 1. The guest gets no PCI GPU 
+  # 2. $DISPLAY is set.
+
+if [ -z "$guestGetsGPU" ] && [[ ! -z "$DISPLAY" ]]
+then
+  printer  "${colors[green]}Guest has no GPU but \$DISPLAY variable is set [$DISPLAY]"
+  printer  "${colors[green]}giving it a virtual screen for this run."
+  coreArgs="$coreArgs -display sdl -vga virtio" # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
+elif [ ! -z "$guestGetsGPU" ]
+then
+  printer  "${colors[green]}Guest will get a PCI gpu, no virtual monitor will be attached."
+  coreArgs="$coreArgs -nographic -vga none"
+elif [ -z "$DISPLAY" ]
+then
+  printer  "${colors[green]}DISPLAY variable unset, guest will have no graphics this session."
+  coreArgs="$coreArgs -nographic -vga none"
+fi 
+
 
 # _____ _
 #|  ___| |_   _
