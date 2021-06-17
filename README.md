@@ -137,7 +137,7 @@ This example would catch any:
        
 3. A PCI device with ID `10ec:8168`.
 
-`-taskset 0,1,2,3,4,5` / `-taskset 0,2,4,8`
+`-pinvcpus 0,1,2,3,4,5` / `-pinvcpus 0,2,4,8`
 
    The taskset argument will take the threads you give it and only lets the VM execute on those threads. It also creates only that many threads on the VM. (6 and 4 in the examples respectively)
    This can significantly reduce latency if the guestis having trouble, even if you haven't configured any host pinning.
@@ -179,9 +179,9 @@ This example would catch any:
   - This script makes use of VirtIO for networking. Unless you're passing through a USB/PCI network adapter, you'll want to install the VirtIO drivers into the guest. (e.g. Boot into the Windows ISO to install, then reboot the VM this time with the VirtIO driver iso attached)
     - The CPU topology is 'host' by default. The VM will think it has the host's CPU model.
   - By default the VM's CPU topology uses ALL host cores and HALF the host's total memory
-      You can use -taskset to cherrypick host threads for the VM to execute on, it will also set the VM's threadcount appropriately to match.
+      You can use -pinvcpus to cherrypick host threads for the VM to execute on, it will also set the VM's threadcount appropriately to match.
         This is very useful if the host has enough load to interupt the VM during normal operation.
-        If your host doesn't have the cpu load headroom for a gaming guest or the VM experiences stuttering, Consider using -taskset to isolate guest cores.
+        If your host doesn't have the cpu load headroom for a gaming guest or the VM experiences stuttering, Consider using -pinvcpus to isolate guest cores.
         
 ## Getting started with a fresh Win10 install
 
@@ -219,7 +219,7 @@ If you aren't ready to do any passthrough and just want to start the VM in a reg
   `./main -image /root/windows.img,format=raw -cdrom /root/Win10Latest.iso`
 
 If a host has been booted with isolated cores you can tell the script to pin the guest to those only:
-  `./main -image /root/windows.img,format=raw -taskset 0,1,2,3,4,5`
+  `./main -image /root/windows.img,format=raw -pinvcpus 0,1,2,3,4,5`
   
   This example starts the VM with only host threads 0 to 5 (The first 3 cores on a multi-threaded host)
   Very useful if a VM experiences stuttering from host load.
