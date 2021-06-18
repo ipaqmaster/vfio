@@ -192,26 +192,42 @@ function bridger {
   mode=$1
     br=$2
    tap=$3
-   int=$4 ; intMAC=$(ip link show $int|grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+')
-
+   int=$4
 
   if [ "$mode" == "start" ] && ! isDry
   then
     if [ ! -z "$int" ]
     then
-      if ! ip link show $int >/dev/null 2>&1; then echo "$int defined but not found, not bridging." ; return 1 ; else intExists=1 ; fi
+      if [ ! -d /sys/class/net/$int ]      ; then printer "${colors[green]}interface $int specified but not found, not bridging."              ; brStartFault=1 ; exit 1 ; else intExists=1 ; fi
+      if [ -L /sys/class/net/$int/master ] ; then printer "${colors[red]}interface $int specified but already part of a bridge, not changing." ; brStartFault=1 ; exit 1 ; fi
     else
-      echo "Host int not specified, will attach VM tap to existing bridge"
+      printer "Host int not specified, will attach VM tap to existing bridge"
       intExists=0
     fi
-    if ip link show $tap >/dev/null 2>&1 ; then echo "$$tap already exists (use another name), not bridging." ; return 1 ; fi
+
+    if [ -L /sys/class/net/$tap ] >/dev/null 2>&1 ; then printer "tap interface $tap already exists (use another name), not bridging." ; brStartFault=1 ; exit 1 ; fi
+
+  if [ ! -z "$int" ]
+  then
+    intMAC=$(ip link show $int|grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+')
+    tapMAC="52:54:00:$(cut -d':' -f4,5,6 <<<$intMAC)"
+  else
+    brMAC=$(ip link show $br|grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+')
+    tapMAC="52:54:00:$(cut -d':' -f4,5,6 <<<$brMAC)"
+  fi
+
     if grep -qs -E '^up$' /sys/class/net/$br/operstate
     then
-      echo "$br exists and is up, will attach $tap to that."
+      printer "$br exists and is up, will attach $tap to that."
       bridgePreexists=1
-    else
-      echo "$br not found, will create for this VM run session"
+    elif ! grep -qs -E '^up$' /sys/class/net/$br/operstate && [ ! -z "$int" ]
+    then
+      printer "${colors[green]}bridge $br not found while host int specified, will create $br for this session and attach $int + $tap to it."
       bridgePreexists=0
+    else
+      printer "${colors[red]}bridge $br not found but no host int specified to bridge VM with. Refusing to create bridge with no host interface."
+      brStartFault=1
+      exit 1
     fi
 
     if [ $bridgePreexists -eq 0 ]
@@ -220,20 +236,28 @@ function bridger {
         # Create the bridge,        bring it up.
       sudo ip link add $br type bridge ; sudo ip link set $br up
         # Remove IPs from int,  attach int to bridge,              give bridge int's mac,                bring int up.
-      if [ $intExists = 1 ] ; then sudo ip addr flush dev $int && sudo ip link set dev $int master $br && sudo ip link set dev $br address $intMAC ; sudo ip link set $int up ; fi
+      if [ $intExists = 1 ]
+      then
+        sudo ip addr flush dev $int && sudo ip link set dev $int master $br && sudo ip link set dev $br address $intMAC ; sudo ip link set $int up ; fi
     fi
 
-      # Always create the tap,     attach tap to bridge,          bring tap up.
+      # Always create the tap,          attach tap to bridge,               bring tap up.
     sudo ip tuntap add $tap mode tap && sudo ip link set $tap master $br && sudo ip link set $tap up
-    permissionsManager takeown /dev/net/tun*
+    permissionsManager takeown /dev/net/tun
     echo '------------------'
     echo -ne "Bridge details:\n\n" ; brctl show $br ; echo
-    if [ $bridgePreexists -eq 0 ]; then echo "Running dhclient on $br..." ; sudo dhclient -v $br 2>&1|grep '^DHCPACK' ; else printer "${colors[green]}Bridge already existed, not running dhclient -r on it." ; fi
+    if [ $bridgePreexists -eq 0 ] && [ ! -z $int ]
+    then
+      echo "Running dhclient on $br..."
+      sudo dhclient -v $br 2>&1|grep '^DHCPACK'
+    else
+      printer "${colors[green]}Bridge already existed, not running dhclient -r on it."
+    fi
     echo '------------------'
   elif [ "$mode" == "start" ] && isDry
   then
     printer "${colors[green]}-bridge\t\tacknowledged [DRY]"
-  elif [ "$mode" == "stop" ] && ! isDry
+  elif [ "$mode" == "stop" ] && ! isDry && [ -z "$brStartFault" ]
   then
     if [ $bridgePreexists -eq 0 ]
     then
@@ -247,6 +271,8 @@ function bridger {
     fi
     if [ "$nm" == "seen" ]; then sudo systemctl restart NetworkManager ; printer "${colors[green]}NetworkManager restarted." ; fi
   fi
+
+
 }
 
 function consoleDrivers { # Toggles rendering to Ctrl+Alt+F[0-9]. Needs to be unhooked for GPU passthrough.
@@ -697,9 +723,6 @@ then
     fi
   fi
 fi
- 
-  # Make the bridge
-if [[ ! -z "$bridgeArgs" ]]; then bridger start $bridgeArgs ; fi
 
 # Put core QEMU arguments together
 
@@ -777,19 +800,23 @@ fi
 
 echo '' # Section separation echo
 
-networkArgs="-device virtio-net,netdev=network0"
+
 if [[ ! -z "$bridgeArgs" ]];
 then
-  networkArgs="$networkArgs -netdev tap,id=network0,ifname=tap0,script=no,downscript=no" # Bridge
+  # Make the bridge
+  bridger start $bridgeArgs
+  networkArgs="-netdev tap,id=vmnet,ifname=$tap,script=no,downscript=no" # Bridge
   printer "${colors[green]}-bridge\t\tspecified, VM will be bridged to the host with a tap adapter."
 elif [[ ! -z "$noNet" ]]
 then
-  networkArgs=""
+  networkArgs="-nic none"
   printer "${colors[green]}-nonet specified, there will be no virtual networking for the VM this run."
 else
-  networkArgs="$networkArgs -netdev user,id=network0" # NAT
+  networkArgs="$networkArgs -netdev user,id=vmnet" # NAT
   printer "${colors[yellow]}No network arguments (-bridge/-nonet) specified, using a NAT adapter for VM networking this run."
 fi
+
+networkArgs="$networkArgs -device virtio-net,netdev=vmnet,mac=$tapMAC"
 
   # Remove any leading/trailing pipes from the regex just in case.
 if [ ! -z "$usbREGEX" ]; then usbREGEX=$(regexCleanup "$usbREGEX") ; fi
