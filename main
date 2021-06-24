@@ -3,18 +3,22 @@ DRY=1   # Assume dry, '-run' flag will flip the bit later.
 echo "" # Professional padding
 
 
-# Some colors
-declare -A colors
-colors[none]="\e[0m"
-colors[red]="\e[31m"
-colors[green]="\e[32m"
-colors[yellow]="\e[33m"
-colors[blue]="\e[34m"
-colors[magenta]="\e[35m"
-colors[cyan]="\e[36m"
-colors[lightgray]="\e[37m"
-colors[white]="\e[97m"
-
+# If the script is not outputting to a terminal, don't add colors (good for piping into 'less', among other commands)
+# Otherwise, color away.
+if [ -t 1 ]
+then
+  # Some colors
+  declare -A colors
+  colors[none]="\e[0m"
+  colors[red]="\e[31m"
+  colors[green]="\e[32m"
+  colors[yellow]="\e[33m"
+  colors[blue]="\e[34m"
+  colors[magenta]="\e[35m"
+  colors[cyan]="\e[36m"
+  colors[lightgray]="\e[37m"
+  colors[white]="\e[97m"
+fi
 
 #     _                
 #  __| | ___ _ __  ___ 
@@ -810,11 +814,14 @@ then
 elif [[ ! -z "$noNet" ]]
 then
   networkArgs="-nic none"
-  printer "${colors[green]}-nonet specified, there will be no virtual networking for the VM this run."
+  printer "${colors[green]}-nonet\t\tspecified, there will be no virtual network for the VM this run."
 else
   networkArgs="$networkArgs -netdev user,id=vmnet" # NAT
-  printer "${colors[yellow]}No network arguments (-bridge/-nonet) specified, using a NAT adapter for VM networking this run."
+  printer "${colors[yellow]}-bridge/-nonet\tnot specified, VM will be given a NAT adapter\n\t\twith a random mac suffix (guest to host) this run.\n\t\tOK for most applications."
 fi
+
+ # If tapMAC unset (e.g. nat/user-mode guestnetworking), generate a random one for the run.
+if [ -z "$tapMAC" ]; then tapMAC="52:54:00:$(openssl rand -hex 3 | sed 's/.\{2\}/&:/g;s/:$//')" ; fi 
 
 networkArgs="$networkArgs -device virtio-net,netdev=vmnet,mac=$tapMAC"
 
@@ -833,8 +840,7 @@ if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; fi
 
 if [ -z "$guestGetsGPU" ] && [[ ! -z "$DISPLAY" ]]
 then
-  printer  "${colors[green]}Guest has no GPU but \$DISPLAY variable is set [$DISPLAY]"
-  printer  "${colors[green]}giving it a virtual screen for this run."
+  printer  "${colors[green]}Guest has no GPU but \$DISPLAY variable is set [$DISPLAY]. Giving it a virtual screen for this run."
   coreArgs="$coreArgs -display sdl -vga virtio" # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
 elif [ ! -z "$guestGetsGPU" ]
 then
