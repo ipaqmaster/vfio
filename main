@@ -304,7 +304,7 @@ function enumerateUSBs { # This only makes arguments
     if [[ ! -z "$vendor" ]] && [[ ! -z "$product" ]]
     then
       newUsbArg="-device usb-host,vendorid=0x$vendor,productid=0x$product"
-        usbArgs="$usbArgs $newUsbArg"
+        usbArgs+=" $newUsbArg"
       printer "  Matched: ${colors[blue]}$vendor:$product '$Name'"
       printer "${colors[green]}    Added to USB Args as:\t$newUsbArg\n"
     else
@@ -404,7 +404,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
         fi
       while ! [ -c /dev/vfio/$iommuGroup ]
       do
-        sleep 1 && iommuTimeout=$(((iommuTimeout+1)))
+        sleep 1 && ((++iommuTimeout))
 	if [ $iommuTimeout -gt 5 ]; then printer "${colors[red]}    Timed out waiting for bound device to appear under /dev/vfio" ; exit 1 ; fi
       done
       permissionsManager takeown /dev/vfio/${iommuGroup}
@@ -434,12 +434,12 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       if [ ! -z "$romfilePath" ] && [ -f "$romfilePath" ]
       then
         printer "${colors[green]}    Romfile will be passed to the GPU on VM start.\t"
-        pciArgs="$pciArgs -device vfio-pci,x-vga=on,multifunction=on,host=$fullBuspath,romfile=$romfilePath,id=hostdev$inc"
+        pciArgs+=" -device vfio-pci,x-vga=on,multifunction=on,host=$fullBuspath,romfile=$romfilePath,id=hostdev$inc"
       fi
     else
-      pciArgs="$pciArgs -device vfio-pci,host=$fullBuspath,id=hostdev$inc"
+      pciArgs+=" -device vfio-pci,host=$fullBuspath,id=hostdev$inc"
     fi
-    inc=$((($inc+1)))
+    ((++inc))
   done <<<"$PCIDevices"
   
   if [[ $var == *"vfiobind"* ]] ; then echo -ne "Here are the completed pciArgs:\n    $pciArgs"; fi
@@ -458,7 +458,7 @@ function pinVcpus {
       while [ $foundVcpus -lt $expectedVcpus ] && [ $timer -lt $timeout ] 
       do
         foundVcpus=$(checkVcpuCount $1| wc -l)
-	timer=$((($timer + 1)))
+	((++timer))
 	printer "${colors[yellow]}Waiting for vcpus to wake up... $foundVcpus found."
         sleep 1 
       done 
@@ -472,7 +472,7 @@ function pinVcpus {
       printer "${colors[green]}Pinning vCPU $vcpuPosition to host core ${vcpuArray[$vcpuPosition]}"
       sudo taskset -cp ${vcpuArray[$vcpuPosition]} $vcpuPid >/dev/null # Pin this vcpu to a host thread.
       sudo chrt -p -f 20 $vcpuPid >/dev/null # Use FIFO scheduling on qemu vcpu threads.
-      vcpuPosition=$((($vcpuPosition + 1)))
+      ((++vcpuPosition))
 
     done <<< "$threadPinList" 
   fi
@@ -604,7 +604,7 @@ if [ -z "$(find /sys/class/iommu/ -type l)" ]; then echo -ne "IOMMU isn't loaded
   # Determine Host cpu cores/threads and what the guest gets based on -pinvcpus (if specified).
 hostThreads=$(grep -Pom1 'siblings.*\ \K([0-9]+)$' /proc/cpuinfo )
   hostCores=$(grep -Pom1 'cpu cores.*\ \K([0-9]+)$' /proc/cpuinfo)
-  if [ "$((($hostCores * 2)))" == "$hostThreads" ]; then hostIsHT=1; fi #hyperthreading check
+  if [ "$((hostCores * 2))" == "$hostThreads" ]; then hostIsHT=1; fi #hyperthreading check
 
 if [ -z "$vcpuThreads" ] # vcpu pinning
 then
@@ -613,12 +613,12 @@ then
 else
   if grep -qE '^([0-9]|,)+$' <<< $vcpuThreads
   then
-    printer "${colors[green]}-pinvcpus\tspecified, Guest will run on host CPU threads:\t$vcpuThreads"
+    printer "${colors[green]}-pinvcpus\tspecified, Guest will run on host CPU threads:${colors[none]}\t$vcpuThreads"
     # Make an array for later reference
     OLDIFS="$IFS" ; IFS=', ' vcpuArray=($(echo $vcpuThreads)) ; IFS="$OLDIFS"
     vcpuCount=$(wc -w <<<${vcpuArray[*]})
       # Check if specified -pinvcpus thread count is divisible by 2. Use hyperthreading/smt if supported
-    if (( $vcpuCount % 2 == 0 )) && [ "$hostIsHT" == "1" ] ; then guestCores=$((( $vcpuCount / 2 ))) ; guestThreads=2; else guestCores=$vcpuCount ; guestThreads=1 ; fi
+    if (( $vcpuCount % 2 == 0 )) && [ "$hostIsHT" == "1" ] ; then guestCores=$(( vcpuCount / 2 )) ; guestThreads=2; else guestCores=$vcpuCount ; guestThreads=1 ; fi
   vcpuPinningAfterQemuStart=1
   else
     echo "This script's -pinvcpus flag only accepts comma delimited threads at the moment such as: 0,1,2,3,4,5,6, or 0,2,4,8 -- Sorry!"
@@ -631,14 +631,15 @@ then
   totalHostMemoryKB="$(readMeminfo MemTotal)"
   if [ ! -z "$totalHostMemoryKB" ]
   then
-    guestmemoryMB="$((($totalHostMemoryKB / 1024 / 2)))"
+    guestmemoryMB="$((totalHostMemoryKB / 1024 / 2))"
     printer "${colors[yellow]}-memory\t\tnot specified, will use half host total:\t${colors[none]}${guestmemoryMB} MB"
   else
     echo "${colors[red]}Failed to find a default memory value for the guest."
   fi
 else
-  if  [[ "$memoryArgs" =~ 'G' ]]; then memoryArgs="$((($(grep -Eo '[0-9]+' <<< $memoryArgs) * 1024 )))"; fi # Convert to MB
+  if  [[ "$memoryArgs" =~ 'G' ]]; then memoryArgs="$(($(grep -Eo '[0-9]+' <<< $memoryArgs) * 1024 ))"; fi # Convert to MB
   guestmemoryMB=$memoryArgs
+  printer "${colors[green]}-memory\t\tspecified, guest will receive:\t\t\t${colors[none]}${guestmemoryMB} MB"
 fi
 
   # Eval biosPath
@@ -689,14 +690,14 @@ then
     hugepageSizeMB="$(grep -Eo '[0-9]+' <<< $hugepageSize)"
   elif [[ "$hugepageSize" =~ 'G' ]]
   then
-    hugepageSizeMB="((($(grep -Eo '[0-9]+' <<< $hugepageSize) * 1024)))"
+    hugepageSizeMB="(($(grep -Eo '[0-9]+' <<< $hugepageSize) * 1024))"
   else
     printer "${color[red]}\t\tSomething went wrong, I was unable to determine ${hugePath}'s hugepage size via the mountpoint. Panicking." ; exit 1
   fi
-  hugepageSizeKB="$((($hugepageSizeMB * 1024)))"
+  hugepageSizeKB="$((hugepageSizeMB * 1024))"
   printer "${colors[green]}\t\tThe selected hugepage mount's size per page is ${hugepageSizeMB}M"
 
-  pagesRequired="$((($guestmemoryMB / $hugepageSizeMB)))"
+  pagesRequired="$((guestmemoryMB / hugepageSizeMB))"
   printer "${colors[green]}\t\t${pagesRequired} pages will be deployed for ${guestmemoryMB}MB of VM memory."
   if ! isDry
   then
@@ -711,14 +712,14 @@ then
       while [ $(readHugeInfo ${hugepageSizeKB} nr_hugepages) -lt $pagesRequired ]
       do
         echo -ne '.'
-        count=$((($count+1))) ; if [ $count -gt 30 ]; then break; fi
+        ((++count)) ; if [ $count -gt 30 ]; then break; fi
         sleep 1
       done ; echo '' # Newline
       hugepagesFree="$(readHugeInfo ${hugepageSizeKB} free_hugepages)"
       if [[ "$(readHugeInfo ${hugepageSizeKB} free_hugepages)" -lt "$pagesRequired" ]]
       then
         printer "${colors[red]}Error, couldn't allocate all required pages. Please free up memory or check your system."
-        printer "\t${colors[yellow]}(${colors[none]}${hugepagesFree} ${colors[yellow]}pages free out of ${pagesRequired}${colors[yellow]} requested. With that the highest value achieved right now is: -mem $((($hugepagesFree * hugepageSizeMB)))${colors[yellow]})\n"
+        printer "\t${colors[yellow]}(${colors[none]}${hugepagesFree} ${colors[yellow]}pages free out of ${pagesRequired}${colors[yellow]} requested. With that the highest value achieved right now is: -mem $((hugepagesFree * hugepageSizeMB))${colors[yellow]})\n"
         exit 1
       fi
       permissionsManager takeown $hugePath
@@ -736,38 +737,38 @@ fi
   if [ ! -z "$hyperv" ]
   then
     printer "${colors[green]}-hyperv\t\tspecified, HyperV Enlightenments will be enabled for this run."
-    cpuArgs="${cpuArgs},hv-frequencies,hv-relaxed,hv-reset,hv-runtime,hv-spinlocks=0x1fff,hv-stimer,hv-synic,hv-time,hv-vapic,hv-vpindex"
+    cpuArgs+=",hv-frequencies,hv-relaxed,hv-reset,hv-runtime,hv-spinlocks=0x1fff,hv-stimer,hv-synic,hv-time,hv-vapic,hv-vpindex"
   fi
 
   smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
   coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
-  coreArgs="$coreArgs -name $(basename $0),debug-threads=on"
-  coreArgs="$coreArgs -drive if=pflash,format=raw,unit=0,readonly=on,file=$biosPath"
+  coreArgs+=" -name $(basename $0),debug-threads=on"
+  coreArgs+=" -drive if=pflash,format=raw,unit=0,readonly=on,file=$biosPath"
 
 if [[ ! -z "${!disks[@]}" ]]
 then
-  printer "${colors[green]}-image(s)\tspecified, using disks this run."
+  printer "${colors[green]}-image(s)\tspecified, using disks this run:"
 else
   printer "${colors[yellow]}-image\t\tnot specified, This VM will run diskless."
 fi
 
 for disk in ${!disks[@]}
 do
-  ioCounter=$((($ioCounter+1)))
+  ((++ioCounter))
   if [ ! -z "${disks[$disk]}" ]; then diskFormat=",format=${disks[$disk]}"; else unset diskFormat ; fi
-  printer "\t\t${ioCounter}  ${colors[blue]}${disk}${diskFormat}"
+  printer "\t\t${ioCounter}\n\t\t  ${colors[blue]}Path:\t\t${colors[none]}${disk}\n\t\t${colors[blue]}  Format:\t${colors[none]}${disks[$disk]}"
   permissionsManager takeown ${disk}
-  coreArgs="$coreArgs -drive file=$disk,if=none,discard=on,id=drive${ioCounter}${diskFormat} -device virtio-blk-pci,drive=drive${ioCounter},id=virtio${ioCounter},iothread=iothread${ioCounter} -object iothread,id=iothread${ioCounter}"
+  coreArgs+=" -drive file=$disk,if=none,discard=on,id=drive${ioCounter}${diskFormat} -device virtio-blk-pci,drive=drive${ioCounter},id=virtio${ioCounter},iothread=iothread${ioCounter} -object iothread,id=iothread${ioCounter}"
 done
 
 if [ ! -z "$isos" ]
 then
-  printer "${colors[green]}-iso(s)\tattached"
+  printer "${colors[green]}-iso(s)\tattached:"
   for iso in ${isos[@]}
   do
-    ioCounter=$((($ioCounter+1)))
-    printer "\t\t${ioCounter}  ${colors[blue]}$iso"
-    coreArgs="$coreArgs -drive file=${iso},index=${ioCounter},media=cdrom"
+    ((++ioCounter))
+    printer "\t\t${ioCounter}\t${colors[blue]}\n\t\t  Path:\t\t${colors[none]}${iso}"
+    coreArgs+=" -drive file=${iso},index=${ioCounter},media=cdrom"
   done
 fi
 
@@ -785,24 +786,23 @@ if [ ! -z "$lookingglass" ]
 then
   printer "${colors[green]}-lookingglass\tspecified, we'll start qemu with a spice server and shared memory for it."
   # Bad way to do this but wanted to keep them readable individually
-  lgArgs="$lgArgs -object {'qom-type':'memory-backend-file','id':'lgMemory0','mem-path':'/dev/shm/looking-glass','size':67108864,'share':true}" # Memory currently hardcoded to 64M, can be changed in this script if needed. Plan to take resolution as an argument in future.
-  lgArgs="$lgArgs -device ivshmem-plain,id=shmem0,memdev=lgMemory0,id=lookingglass"
-  lgArgs="$lgArgs -chardev spicevmc,id=charchannel0,name=vdagent"
-  lgArgs="$lgArgs -device virtio-serial"
-  lgArgs="$lgArgs -chardev socket,path=/dev/shm/vmsocket,server=on,wait=off,id=vmsocket"
-  lgArgs="$lgArgs -device virtserialport,nr=1,chardev=charchannel0,id=channel0,name=com.redhat.spice.0"
-  lgArgs="$lgArgs -audiodev id=audio1,driver=spice"
-  lgArgs="$lgArgs -spice port=5900,addr=127.0.0.1,disable-ticketing=on,image-compression=off,seamless-migration=on"
-  lgArgs="$lgArgs -chardev spicevmc,id=charredir0,name=usbredir"
-  lgArgs="$lgArgs -chardev spicevmc,id=charredir1,name=usbredir" 
+  lgArgs+=" -object {'qom-type':'memory-backend-file','id':'lgMemory0','mem-path':'/dev/shm/looking-glass','size':67108864,'share':true}" # Memory currently hardcoded to 64M, can be changed in this script if needed. Plan to take resolution as an argument in future.
+  lgArgs+=" -device ivshmem-plain,id=shmem0,memdev=lgMemory0,id=lookingglass"
+  lgArgs+=" -chardev spicevmc,id=charchannel0,name=vdagent"
+  lgArgs+=" -device virtio-serial"
+  lgArgs+=" -chardev socket,path=/dev/shm/vmsocket,server=on,wait=off,id=vmsocket"
+  lgArgs+=" -device virtserialport,nr=1,chardev=charchannel0,id=channel0,name=com.redhat.spice.0"
+  lgArgs+=" -audiodev id=audio1,driver=spice"
+  lgArgs+=" -spice port=5900,addr=127.0.0.1,disable-ticketing=on,image-compression=off,seamless-migration=on"
+  lgArgs+=" -chardev spicevmc,id=charredir0,name=usbredir"
+  lgArgs+=" -chardev spicevmc,id=charredir1,name=usbredir" 
 fi
 
 if [ ! -z "$extras" ]
 then
   printer "${colors[green]}-extras\t\tspecified, we'll start qemu with these extra arguments:${colors[none]}\t$extras"
+  echo '' # spacer
 fi
-
-echo '' # Section separation echo
 
 
 if [[ ! -z "$bridgeArgs" ]];
@@ -816,14 +816,14 @@ then
   networkArgs="-nic none"
   printer "${colors[green]}-nonet\t\tspecified, there will be no virtual network for the VM this run."
 else
-  networkArgs="$networkArgs -netdev user,id=vmnet" # NAT
+  networkArgs+=" -netdev user,id=vmnet" # NAT
   printer "${colors[yellow]}-bridge/-nonet\tnot specified, VM will be given a NAT adapter\n\t\twith a random mac suffix (guest to host) this run.\n\t\tOK for most applications."
 fi
 
  # If tapMAC unset (e.g. nat/user-mode guestnetworking), generate a random one for the run.
 if [ -z "$tapMAC" ]; then tapMAC="52:54:00:$(openssl rand -hex 3 | sed 's/.\{2\}/&:/g;s/:$//')" ; fi 
 
-networkArgs="$networkArgs -device virtio-net,netdev=vmnet,mac=$tapMAC"
+networkArgs+=" -device virtio-net,netdev=vmnet,mac=$tapMAC"
 
   # Remove any leading/trailing pipes from the regex just in case.
 if [ ! -z "$usbREGEX" ]; then usbREGEX=$(regexCleanup "$usbREGEX") ; fi
@@ -841,15 +841,15 @@ if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; fi
 if [ -z "$guestGetsGPU" ] && [[ ! -z "$DISPLAY" ]]
 then
   printer  "${colors[green]}Guest has no GPU but \$DISPLAY variable is set [$DISPLAY]. Giving it a virtual screen for this run."
-  coreArgs="$coreArgs -display sdl -vga virtio" # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
+  coreArgs+=" -display sdl -vga virtio" # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
 elif [ ! -z "$guestGetsGPU" ]
 then
   printer  "${colors[green]}Guest will get a PCI gpu, no virtual monitor will be attached."
-  coreArgs="$coreArgs -nographic -vga none"
+  coreArgs+=" -nographic -vga none"
 elif [ -z "$DISPLAY" ]
 then
   printer  "${colors[green]}DISPLAY variable unset, guest will have no graphics this session."
-  coreArgs="$coreArgs -nographic -vga none"
+  coreArgs+=" -nographic -vga none"
 fi 
 
 
