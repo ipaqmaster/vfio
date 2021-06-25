@@ -1,41 +1,40 @@
 # vfio
 
-## What is this
+## About it
 
-A bash script that starts my Win10 VM directly with `qemu-system-x86_64` but automatically handles optional network bridging, hugepage allocation, USB passthrough arguments and PCI device rebinding + arguments (+ rebinding back to drivers when done) for minimizing my headaches.
+This is a bash script I've made to start virtual machines by calling `qemu-system-x86_64` directly but automatically handles optional network bridging, hugepage allocation, USB passthrough arguments, PCI passthrough arguments complete with automatic driver rebinding and other scenarios useful for gaming or other tinkering. It's been great for minimizing my headaches.
 
-It makes starting the Win10 vm quick and easy then sends me back to the lightdm login screen once it shuts down.
-Hoping the script can be helpful to others as I continiously tinker with it. Plan to add dual GPU support (one for host, one for guest) once I dust my old PC off.
+It makes starting a Win10 vm for gaming quick and easy then sends me back to the lightdm login screen once the VM shuts down after returning all devices back to their driver. I'm Hoping the script can be helpful to others as I continue to tinker with it. I've even pulled out the old PC with two GPUs just to play with and add Looking Glass support to the script.
 
 ## What does it do
 
 This script starts a VM using qemu-system-x86_64 directly but it can optionally:
 
-  Give you a good rundown of what it's about to do in dry mode (Default) without -run, also printing the QEMU arguments it would've used.
+  * Give you a good rundown of what it's about to do in dry mode (Default) without -run, also printing the QEMU arguments it would've used.
 
-  Include virtual disks and any ISOs you may wish to boot with
+  * Include virtual disks and any ISOs you may wish to boot with
 
-  Take a regular expression of PCI and USB devices to pass to the VM when starting it.
+  * Take a regular expression of PCI and USB devices to pass to the VM when starting it.
 
-  Automatically generate qemu arguments for PCI and USB matches while automatically unbinding matched PCI devices from their current driver and attaching them to the vfio-pci driver if not already done, without any need for driver blocking or early vfio binding at boot time.
+  * Automatically generate qemu arguments for PCI and USB matches while automatically unbinding matched PCI devices from their current driver and attaching them to the vfio-pci driver if not already done, without any need for driver blocking or early vfio binding at boot time.
   
-  Rebind PCI devices back to the driver they came from after the VM shuts down like it never happened and restart your display-manager if it were running.
+  * Rebind PCI devices back to the driver they came from after the VM shuts down like it never happened and restart your display-manager if it were running.
 
-  Make a network bridge on the host during VM runtime or attach the VM to an existing network bridge; Giving the VM its own Layer 2 mac-address presence on the existing home LAN.
+  * Make a network bridge on the host during VM runtime or attach the VM to an existing network bridge; Giving the VM its own Layer 2 mac-address presence on the existing home LAN.
   (Useful for setting a DHCP reservation, connecting to services running on the VM such as RDP, avoiding host-NAT nightmares)
   
-  Pin the VM's vcpu qemu threads to specific host CPU threads to help avoid stutter.
+  * Pin the VM's vcpu qemu threads to specific host CPU threads to help avoid stutter.
     (Useful if core isolation is configured in the host's boot parameters or if it has an isolating cpu-set defined for improved VM performance)
 
-  Dynamically allocate hugepages for the VM, or use existing pages if enough are free and preallocated (such as, at boot time in kernel arguments)
+  * Dynamically allocate hugepages for the VM, or use existing pages if enough are free and preallocated (such as, at boot time in kernel arguments)
 
-  Enable Looking Glass shared memory + spice keyboard/mous input for when you have more than one GPU on the host and want to stay in your Linux environment.
+  * Enable Looking Glass shared memory + spice keyboard/mous input for when you have more than one GPU on the host and want to stay in your Linux environment.
 
-  Pass a romfile for any GPU pci devices being passed through
+  * Pass a romfile for any GPU pci devices being passed through
 
-  Include common HyperV enlightenments to either aid with performance in some scenarios or to help kernel-based Anti-Cheat agents play along.
+  * Include common HyperV enlightenments to either aid with performance in some scenarios or to help kernel-based Anti-Cheat agents play along.
 
-  And sometimes more.
+  * And sometimes more.
 
 ## What hosts and installs are supported?
 
@@ -106,9 +105,10 @@ Using example 2:
 
 `-hugepages / -huge / -hugepages /optional/mountpoint/to/custom/hugepage`
 
-   Tries to allocate hugepages for the VM based on it's total memory defined with -memory. Hugepages for a VM with frequent random memory access such as gaming contexts can be much snappier than your regular process doing the same thing across many small pages.
-   If no argument is given it'll use /dev/hugepages which is often 2MB per page. The script drops host memory cache and then compact_memory before allocating to aim for less hugepage fragmentation and will clean up after itself by setting pages back to 0 to reclaim memory for the host to use later.
-   Also supports preallocation, so if you reserved some 1GB pages at boot time and mounted a pagesize=1G hugetlbfs to some directory, specifying that can skip the above line if there's enough for the VM to use. Allocating hugepages at boot time sacrifices a lot of memory but doing it so early prevents fragmentation.
+   Tries to allocate hugepages for the VM dynamically based on how much memory it will be given (defined with -memory). Hugepages for a VM with frequent random memory access such as in gaming can be much snappier than your regular process accessing regular memory.
+   If no argument is given it'll use /dev/hugepages which is often 2MB per page. The script drops host memory cache and then compact_memory before allocating to aim for less fragmentation and will clean up after itself by setting pages back to 0 to reclaim memory for the host to use later if they weren't preallocated earlier.
+   
+   This flag also supports preallocation, so if you reserved some 1GB pages at boot time and mounted a pagesize=1G hugetlbfs to some directory, specifying that will skip the dynamic hugepgae allocation step above if there's enough free for the VM to use. Allocating hugepages at boot time sacrifices a lot of memory but doing it so early prevents fragmentation. Can be a lifesaver for performance.
 
 `-hyperv`
 
