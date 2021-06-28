@@ -415,7 +415,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       echo
     elif [[ $@ == *"restorebind"* ]] && ! isDry
     then
-      if ! [ -z "$driver" ]
+      if ! [ -z "$driver" ] && [ "$driver" != "vfio-pci" ]
       then
         printer "${colors[green]}    Rebinding $vendorClass back to driver:\t${colors[none]}$driver"
         echo "0x$vendor 0x$class" | sudo tee /sys/bus/pci/drivers/vfio-pci/remove_id >/dev/null
