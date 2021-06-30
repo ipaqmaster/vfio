@@ -2,7 +2,7 @@
 
 ## About it
 
-This is a bash script I've made to start virtual machines by calling `qemu-system-x86_64` directly but automatically handles optional network bridging, hugepage allocation, USB passthrough arguments, PCI passthrough arguments complete with automatic driver rebinding and other scenarios useful for gaming or other tinkering. It's been great for minimizing my headaches.
+This is a bash script I've made to start virtual machines by calling `qemu-system-x86_64` directly but it automatically handles optional network bridging, hugepage allocation, USB passthrough arguments, PCI passthrough arguments complete with automatic driver rebinding and other scenarios useful for gaming or other tinkering. It's been great for minimizing my headaches.
 
 It makes starting a Win10 vm for gaming quick and easy then sends me back to the lightdm login screen once the VM shuts down after returning all devices back to their driver. I'm Hoping the script can be helpful to others as I continue to tinker with it. I've even pulled out the old PC with two GPUs just to play with and add Looking Glass support to the script.
 
