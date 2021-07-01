@@ -28,7 +28,7 @@ This script starts a VM using qemu-system-x86_64 directly but it can optionally:
 
   * Dynamically allocate hugepages for the VM, or use existing pages if enough are free and preallocated (such as, at boot time in kernel arguments)
 
-  * Enable Looking Glass shared memory + spice keyboard/mous input for when you have more than one GPU on the host and want to stay in your Linux environment.
+  * Enable Looking Glass shared memory + spice keyboard/mouse input for when you have more than one GPU on the host and want to stay in your Linux environment.
 
   * Pass a romfile for any GPU pci devices being passed through
 
