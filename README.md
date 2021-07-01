@@ -59,13 +59,13 @@ Furthermore, instead of using libvirtd and defining a Windows VM in a more "set 
 
 `-image /dev/zvol/zpoolName/windows -imageformat raw`
 
-   If set - attaches a flatfile, partition, whole-disk or zvol to the VM with QEMU's -drive parameter.
+   If set, attaches a flatfile, partition, whole-disk or zvol to the VM with QEMU's -drive parameter.
    -imageformat is optional and will apply to the most recent -image argument specified.
    -image and -imageformat can be used multiple times to add more disks.
 
 `-iso /path/to/a/diskimage.iso`
 
-   If set attaches an ISO to qemu with an incrementing index id. Can be specified as many times needed for multiple CDs. Good for liveCDs or installing an OS with an optional driver-cd.
+   If set, attaches an ISO to qemu with an incrementing index id. Can be specified as many times needed for multiple CDs. Good for liveCDs or installing an OS with an optional driver-cd.
 
 `-bridge br0,tap0	(Attach vm's tap0 to existing br0)`
 
@@ -106,8 +106,8 @@ Using example 2:
 `-hugepages / -huge / -hugepages /optional/mountpoint/to/custom/hugepage`
 
    Tries to allocate hugepages for the VM dynamically based on how much memory it will be given (defined with -memory). Hugepages for a VM with frequent random memory access such as in gaming can be much snappier than your regular process accessing regular memory.
-   If no argument is given it'll use /dev/hugepages which is often 2MB per page. The script drops host memory cache and then compact_memory before allocating to aim for less fragmentation and will clean up after itself by setting pages back to 0 to reclaim memory for the host to use later if they weren't preallocated earlier.
-   
+   If no argument is given it'll use /dev/hugepages which is often 2MB per page. The script drops host memory cache and then runs compact_memory before allocating with the aim of less fragmentation in hugepages. Using this argument will also clean up after itself by setting pages back to 0, reclaiming memory for the host. But only if it wasn't already preallocated before running the script.
+
    This flag also supports preallocation, so if you reserved some 1GB pages at boot time and mounted a pagesize=1G hugetlbfs to some directory, specifying that will skip the dynamic hugepgae allocation step above if there's enough free for the VM to use. Allocating hugepages at boot time sacrifices a lot of memory but doing it so early prevents fragmentation. Can be a lifesaver for performance.
 
 `-hyperv`
