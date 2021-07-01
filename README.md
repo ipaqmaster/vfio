@@ -30,7 +30,7 @@ This script starts a VM using qemu-system-x86_64 directly but it can optionally:
 
   * Enable Looking Glass shared memory + spice keyboard/mouse input for when you have more than one GPU on the host and want to stay in your Linux environment.
 
-  * Pass a romfile for any GPU pci devices being passed through
+  * Pass a romfile for any GPU pci devices being passed through, if needed for your configuration.
 
   * Include common HyperV enlightenments to either aid with performance in some scenarios or to help kernel-based Anti-Cheat agents play along.
 
@@ -171,8 +171,13 @@ This example would catch any:
 
 `-romfile/-vbios /path/to/vbios.bin`
    Accepts a file path to a rom file to use on any detected GPU during -pci argument processing.
-   You should check the vbios dump you're about to use is safe before using it on a GPU, rom-parser is a good project for this.
-   Otherwise you can often download your model's vbios from TechPowerup and patch it with a project like NVIDIA-vBIOS-VFIO-Patcher before using it.
+   
+   Please note, you typically only need this if you're on a setup where the host *must* initialize its GPU. Such as a Single GPU host with no onboard graphics.
+   That is to say.. if your GPU is properly isolated from the host from boot and bios is told to initialize on either a different GPU or onboard graphics..
+   you won't need this argument. But it is harmless to include.
+   
+   If you're going to use a vbios dump, you should confirm it's safe before using it on a GPU the rom-parser github project is good to check this.
+   Otherwise you can typically just download your model's vbios from TechPowerup and patch it with a project like NVIDIA-vBIOS-VFIO-Patcher before using it.
    
 `-run`
 
