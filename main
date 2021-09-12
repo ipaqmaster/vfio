@@ -649,6 +649,7 @@ then
   if [[ ! -f "$defaultBiosPath" ]]
   then
     printer "${colors[red]}-bios\t\tnot specified and couldn't find default '$defaultBiosPath'. Please install OVMF or set your .fd file with the -bios argument"
+    exit 1
   else
     printer "${colors[green]}-bios\t\tnot specified, using discovered default:\t${colors[none]}${defaultBiosPath}"
     biosPath=$defaultBiosPath
