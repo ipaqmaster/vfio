@@ -300,12 +300,15 @@ function enumerateUSBs { # This only makes arguments
      vendorProduct="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$USBDevice)"
      vendor="$( cut -d':' -f1 <<<"$vendorProduct")"
     product="$( cut -d':' -f2 <<<"$vendorProduct")"
-        Name="$(cut -d' ' -f7- <<<"$USBDevice")"
+       Name="$(cut -d' ' -f7- <<<"$USBDevice")"
+    busPath="$(cut -d' ' -f2 <<<"$USBDevice")"
+ devicePath="$(cut -d' ' -f4 <<<"$USBDevice" | grep -Eo '[0-9]+')"
     if [[ ! -z "$vendor" ]] && [[ ! -z "$product" ]]
     then
       newUsbArg="-device usb-host,vendorid=0x$vendor,productid=0x$product"
         usbArgs+=" $newUsbArg"
       printer "  Matched: ${colors[blue]}$vendor:$product '$Name'"
+      permissionsManager takeown /dev/bus/usb/${busPath}/${devicePath} # Take ownership, required for USB storage if not root.
       printer "${colors[green]}    Added to USB Args as:\t$newUsbArg\n"
     else
       printer "${colors[red]}Skipping: '$USBDevice' as there was an issue finding it.\n"
