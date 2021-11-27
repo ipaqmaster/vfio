@@ -289,10 +289,10 @@ function consoleDrivers { # Toggles rendering to Ctrl+Alt+F[0-9]. Needs to be un
   fi
 }
 
-function enumerateUSBs { # This only makes arguments
+function enumerateUSBs { # Generate usb related arguments for the guest.
   echo "USB:"
   lsusbOutput="$(lsusb)"
-  usbArgs="-usb"
+  usbArgs="-device qemu-xhci" # Add a backwards compatable xhci USB3 controller to the guest by default
   USBDevices="$(grep -E "$usbREGEX" <<<"$lsusbOutput")"
   
   while read USBDevice
