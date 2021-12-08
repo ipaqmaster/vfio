@@ -114,6 +114,14 @@ Using example 2:
 
    Enable hyper-v enlightenments for nested virtualization. For some cases this may help convince more invasive Anti-cheats to play along. You will need to enable (tick) the HyperV Windows Feature and reboot when it asks before this will work though.
 
+`-hostaudio`
+
+   Try to use a pulseaudio server on the host for guest audio, will also try to automatically start it.
+
+`-quiet/-q/-silence/-s`
+
+   Try to be quiet, only printing any errors we run into. Useful after your 1320th run.
+
 `-bios '/path/to/that.fd'`
 
    An optional bios path. If not set the script will try `/usr/share/ovmf/x64/OVMF_CODE.fd` if available.
