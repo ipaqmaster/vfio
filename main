@@ -197,6 +197,18 @@ function regexCleanup {
   echo $REGEX
 }
 
+function etherGrep {
+  if [ -z "$1" ]
+  then
+    echo "etherGrep needs an interface as an argument to grep its mac address."
+    return 1
+  else
+    etherGrepInterface=$1
+  fi
+  ip link show $etherGrepInterface | grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+'
+    unset etherGrepInterface
+}
+
 function bridger {
   # Goal is to attach the vm's tap interface to a bridge. Creates the bridge if missing and attaches host int.
   mode=$1
@@ -217,14 +229,18 @@ function bridger {
 
     if [ -L /sys/class/net/$tap ] >/dev/null 2>&1 ; then printer "tap interface $tap already exists (use another name), not bridging." ; brStartFault=1 ; exit 1 ; fi
 
+    # If a host interface were specified, steal the last 3 octets for identification,
+    # Otherwise try to steal last 3 octets from bridge interface MAC instead.
   if [ ! -z "$int" ]
   then
-    intMAC=$(ip link show $int|grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+')
-    tapMAC="52:54:00:$(cut -d':' -f4,5,6 <<<$intMAC)"
+      # From specified int
+    sourceMAC=$(etherGrep $int)
   else
-    brMAC=$(ip link show $br|grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+')
-    tapMAC="52:54:00:$(cut -d':' -f4,5,6 <<<$brMAC)"
+      # From existing bridge
+    sourceMAC=$(etherGrep $br)
   fi
+      # Build VM's mac address from above
+    tapMAC="52:54:00:$(cut -d':' -f4,5,6 <<<$sourceMAC)"
 
     if grep -qs -E '^up$' /sys/class/net/$br/operstate
     then
@@ -865,7 +881,7 @@ then
   bridger start $bridgeArgs
   networkArgs="-netdev tap,id=vmnet,ifname=$tap,script=no,downscript=no" # Bridge
   printer "${colors[green]}-bridge\t\tspecified, VM will be bridged to the host with a tap adapter."
-elif [[ ! -z "$noNet" ]]
+elif [ ! -z "$noNet" ]
 then
   networkArgs="-nic none"
   printer "${colors[green]}-nonet\t\tspecified, there will be no virtual network for the VM this run."
@@ -874,10 +890,15 @@ else
   printer "${colors[yellow]}-bridge/-nonet\tnot specified, VM will be given a NAT adapter\n\t\twith a random mac suffix (guest to host) this run.\n\t\tOK for most applications."
 fi
 
- # If tapMAC unset (e.g. nat/user-mode guestnetworking), generate a random one for the run.
-if [ -z "$tapMAC" ]; then tapMAC="52:54:00:$(openssl rand -hex 3 | sed 's/.\{2\}/&:/g;s/:$//')" ; fi 
+if [ -z "$noNet" ]
+then
+    # Generate a mac for the guest if not bridging.	
+  if [ -z "$tapMAC" ]; then tapMAC="52:54:00:$(openssl rand -hex 3 | sed 's/.\{2\}/&:/g;s/:$//')" ; fi
 
-networkArgs+=" -device virtio-net,netdev=vmnet,mac=$tapMAC"
+    # Add virtio-net for nat/bridging
+  networkArgs+=" -device virtio-net,netdev=vmnet,mac=$tapMAC"
+fi
+
 
   # Remove any leading/trailing pipes from the regex just in case.
 if [ ! -z "$usbREGEX" ]; then usbREGEX=$(regexCleanup "$usbREGEX") ; fi
