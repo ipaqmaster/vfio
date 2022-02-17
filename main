@@ -45,7 +45,7 @@ fi
 # 
 
 function printer {
-  if [ -z "$quiet" ] || [ "$2" == "fault" ] ; then echo -e "${@} ${colors[none]}" ; fi
+  if [ -z "$quiet" ] || [ "$2" == "fault" ] ; then echo -e "${1} ${colors[none]}" ; fi
 }
 
 function printHelp {
@@ -157,7 +157,9 @@ function gpuCheck { if grep -o '\[VGA controller\]' <<<$(lspci -vnnn -s "$1") > 
 
 function bindingTimeout {
   if [ ! -z "$1" ]; then attemptedTask=$1 ; else attemptedTask="bind or unbind" ; fi
-  printer "${colors[red]}    The device  $fullBuspath ${colors[red]}// $vendorClass ${colors[red]} Was unable to $attemptedTask after 5 seconds, is something else using it? (E.g This will happen to a GPU in use by X). Giving up." "fault"
+  printer "${colors[red]}    The device  $fullBuspath ${colors[red]}// $vendorClass ${colors[red]} Was unable to $attemptedTask after 5 seconds, is something else using it?" "fault"
+  printer "${colors[red]}    (E.g This will happen to a GPU in use by X)" "fault"
+  printer "${colors[red]}    Giving up." "fault"
   exit 1
 }
 
@@ -264,7 +266,9 @@ function bridger {
         # Remove IPs from int,  attach int to bridge,              give bridge int's mac,                bring int up.
       if [ $intExists = 1 ]
       then
-        sudo ip addr flush dev $int && sudo ip link set dev $int master $br && sudo ip link set dev $br address $intMAC ; sudo ip link set $int up ; fi
+        sudo ip addr flush dev $int && sudo ip link set dev $int master $br && sudo ip link set dev $br address $intMAC
+	sudo ip link set $int up
+      fi
     fi
 
       # Always create the tap,          attach tap to bridge,               bring tap up.
@@ -456,10 +460,11 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     if gpuCheck $fullBuspath
     then
       printer "${colors[green]}    This appears to be a GPU.\t" && guestGetsGPU=1
+      pciArgs+=" -device vfio-pci,x-vga=on,multifunction=on,host=$fullBuspath,id=hostdev$inc"
       if [ ! -z "$romfilePath" ] && [ -f "$romfilePath" ]
       then
         printer "${colors[green]}    Romfile will be passed to the GPU on VM start.\t"
-        pciArgs+=" -device vfio-pci,x-vga=on,multifunction=on,host=$fullBuspath,romfile=$romfilePath,id=hostdev$inc"
+        pciArgs+=",romfile=$romfilePath" #Tack romfile on the end if specified
       fi
     else
       pciArgs+=" -device vfio-pci,host=$fullBuspath,id=hostdev$inc"
