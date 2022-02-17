@@ -266,7 +266,7 @@ function bridger {
         # Remove IPs from int,  attach int to bridge,              give bridge int's mac,                bring int up.
       if [ $intExists = 1 ]
       then
-        sudo ip addr flush dev $int && sudo ip link set dev $int master $br && sudo ip link set dev $br address $intMAC
+        sudo ip addr flush dev $int && sudo ip link set dev $int master $br && sudo ip link set dev $br address $sourceMAC
 	sudo ip link set $int up
       fi
     fi
