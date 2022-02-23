@@ -67,9 +67,9 @@ Furthermore, instead of using libvirtd and defining a Windows VM in a more "set 
 
    If set, attaches an ISO to qemu with an incrementing index id. Can be specified as many times needed for multiple CDs. Good for liveCDs or installing an OS with an optional driver-cd.
 
-`-bridge br0,tap0	(Attach vm's tap0 to existing br0)`
+`-bridge tap0,br0	(Attach vm's tap0 to existing br0)`
 
-`-bridge br0,tap0,eth0	(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)`
+`-bridge tap0,br0,eth00	(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)`
 
    Takes a bridge name, interface and tap interface name as arguments.
    
@@ -244,7 +244,7 @@ If a host has been booted with isolated cores you can tell the script to pin the
   Very useful if a VM experiences stuttering from host load.
 
 An example run with passthrough could look like:
-  `./main -image /dev/zvol/poolName/windows,format=raw -bridge br0,eth0,tap0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'`
+  `./main -image /dev/zvol/poolName/windows,format=raw -bridge tap0,br0,eth0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'`
   
   This example would (if seen) pass all regex-matching USB and PCI devices and rebind the PCI devices if applicable.
 It would also provision network bridge br0 and attach tap0 to the bridge with your host interface. Then give tap0 to the VM.
