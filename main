@@ -909,7 +909,7 @@ if [ ! -z "$lookingglass" ]
 then
   printer "${colors[green]}-lookingglass\tspecified, we'll start qemu with a spice server and shared memory for it."
   # Bad way to do this but wanted to keep them readable individually
-  lgArgs+=" -object {'qom-type':'memory-backend-file','id':'lgMemory0','mem-path':'/dev/shm/looking-glass','size':67108864,'share':true}" # Memory currently hardcoded to 64M, can be changed in this script if needed. Plan to take resolution as an argument in future.
+  lgArgs+=" -object memory-backend-file,id=lgMemory0,share=on,mem-path=/dev/shm/looking-glass,size=64M" # Memory currently hardcoded to 64M, can be changed in this script if needed. Plan to take resolution as an argument in future.
   lgArgs+=" -device ivshmem-plain,id=shmem0,memdev=lgMemory0,id=lookingglass"
   lgArgs+=" -chardev spicevmc,id=charchannel0,name=vdagent"
   lgArgs+=" -device virtio-serial"
