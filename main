@@ -539,7 +539,8 @@ function pinVcpus {
 }
 
 function checkFileExists {
-  if [ -f "$1" ]
+    # Check for valid Symlink or real file
+  if [ -e "$1" ]
   then
      return 0
   else
