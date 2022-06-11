@@ -762,6 +762,10 @@ then
   else
     printer "${colors[green]}-hugepages\tspecified with custom mountpoint." ; hugePathDefault=0
   fi
+
+   # Set the argument regardless of dry setting.
+  hugeArgs="-mem-path $hugePath"
+
   if ! grep "hugetlbfs ${hugePath}" /proc/mounts >/dev/null 2>&1 # Check for a hugetlbfs mount for this path
   then
     printer "${colors[red]}\t\tMountpoint ${colors[none]}${hugePath}${colors[red]} not found in ${colors[none]}/proc/mounts${colors[red]} as type hugetlbfs?"
@@ -818,7 +822,6 @@ then
       fi
       permissionsManager takeown $hugePath
       printer "\n\n${color[green]}Hugepages ready."
-      hugeArgs="-mem-path $hugePath"
     fi
   fi
 fi
