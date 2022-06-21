@@ -26,7 +26,7 @@ fi
 # \__,_|\___| .__/|___/
 #           |_|        
 
-for dependency in brctl chrt dhclient dhclient ip qemu-system-x86_64 taskset tr openssl
+for dependency in chrt dhclient dhclient ip qemu-system-x86_64 taskset tr openssl
 do
   which $dependency >/dev/null 2>&1 || missing="$missing $dependency "
 done
@@ -303,8 +303,21 @@ function bridger {
     if [ -n "$br" ]
     then
       sudo ip link set $tap master $br && sudo ip link set $tap up
-      echo '------------------'
-      echo -ne "Bridge details:\n\n" ; brctl show $br ; echo
+      printer '------------------'
+      printer "Bridge details:"
+      printer "\t$br:"
+      for interface in $(ls -1 /sys/class/net/)
+      do
+        if [ -e "/sys/class/net/$interface/master" ]
+	then
+          master=$(basename $(readlink /sys/class/net/$interface/master))
+	  if [ "$master" == "$br" ];
+	  then
+	    printer "\t  ${interface}"
+	  fi
+	fi
+      done
+
       if [ $bridgePreexists -eq 0 ] && [ ! -z $int ]
       then
         echo "Running dhclient on $br..."
