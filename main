@@ -19,12 +19,12 @@ then
   colors[white]="\e[97m"
 fi
 
-#     _                
-#  __| | ___ _ __  ___ 
+#     _
+#  __| | ___ _ __  ___
 # / _` |/ _ \ '_ \/ __|
 #| (_| |  __/ |_) \__ \
 # \__,_|\___| .__/|___/
-#           |_|        
+#           |_|
 
 for dependency in chrt dhclient dhclient ip qemu-system-x86_64 taskset tr openssl
 do
@@ -36,12 +36,12 @@ then
   exit 1
 fi
 
-# _____                 _   _                 
-#|  ___|   _ _ __   ___| |_(_) ___  _ __  ___ 
+# _____                 _   _
+#|  ___|   _ _ __   ___| |_(_) ___  _ __  ___
 #| |_ | | | | '_ \ / __| __| |/ _ \| '_ \/ __|
 #|  _|| |_| | | | | (__| |_| | (_) | | | \__ \
 #|_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
-# 
+#
 
 function printer {
   if [ -z "$quiet" ] || [ "$2" == "fault" ] ; then echo -e "${1} ${colors[none]}" ; fi
@@ -120,7 +120,7 @@ function permissionsManager { # chown's things before qemu starts, but also trie
   if isDry ; then return ; fi # Do nothing when dry.
 
   if ! declare -p Permissions >/dev/null 2>&1 ; then declare -g -A Permissions ; fi # Check array is ready for use.
- 
+
   if [ "$1" == "takeown" ] # Takes ownership of a file or dir with sudo
   then
     for path in "${@:2}"
@@ -132,7 +132,7 @@ function permissionsManager { # chown's things before qemu starts, but also trie
       else
           # Take ownership but keep track
         Permissions[${path}]=${originalOwner} ; sudo chown ${USER} ${path} 2>/dev/null
-      fi 
+      fi
     done
   elif [ "$1" == "return" ]
   then
@@ -171,8 +171,7 @@ function do_cleanup {
   then
       # Undo bridge if used
     if [[ ! -z "$bridgeArgs" ]]; then bridger stop $bridgeArgs ; fi
-    
-  
+
       # Rebind the console and PCI devices if they were rebound
     if [ ! -z "$pciREGEX" ]
     then
@@ -238,7 +237,7 @@ function bridger {
         brTapOnly=1
       else
         printer "Specified tap $tap already exists, will attempt to attach VM to that."
-	brTapAlreadyExists=1
+        brTapAlreadyExists=1
       fi
 
     elif [ ! -z "$int" ]
@@ -293,7 +292,7 @@ function bridger {
       if [ $intExists = 1 ]
       then
         sudo ip addr flush dev $int && sudo ip link set dev $int master $br && sudo ip link set dev $br address $(etherGrep $int)
-	sudo ip link set $int up
+        sudo ip link set $int up
       fi
     fi
       # Create the tap if missing, attach tap to bridge if specified and bring the tap up
@@ -309,13 +308,13 @@ function bridger {
       for interface in $(ls -1 /sys/class/net/)
       do
         if [ -e "/sys/class/net/$interface/master" ]
-	then
+        then
           master=$(basename $(readlink /sys/class/net/$interface/master))
-	  if [ "$master" == "$br" ];
-	  then
-	    printer "\t  ${interface}"
-	  fi
-	fi
+          if [ "$master" == "$br" ];
+          then
+            printer "\t  ${interface}"
+          fi
+        fi
       done
 
       if [ $bridgePreexists -eq 0 ] && [ ! -z $int ]
@@ -345,12 +344,11 @@ function bridger {
     if [ "$nm" == "seen" ]; then sudo systemctl restart NetworkManager ; printer "${colors[green]}NetworkManager restarted." ; fi
   fi
 
-
 }
 
 function consoleDrivers { # Toggles rendering to Ctrl+Alt+F[0-9]. Needs to be unhooked for GPU passthrough.
   if ! isDry
-  then 
+  then
     if [[ "$1" -eq 'bind' ]]; then bindBoolean="1"; bindState="$1" ; else bindBoolean="0" ; bindState="unbind" ; fi
     for vtconsole in /sys/class/vtconsole/*; do echo $bindBoolean | sudo tee $vtconsole/bind >/dev/null; done
     echo efi-framebuffer.0 | sudo tee /sys/bus/platform/drivers/efi-framebuffer/$bindState >/dev/null
@@ -363,7 +361,7 @@ function enumerateUSBs { # Generate usb related arguments for the guest.
   lsusbOutput="$(lsusb)"
   usbArgs="-device qemu-xhci" # Add a backwards compatable xhci USB3 controller to the guest by default
   USBDevices="$(grep -E "$usbREGEX" <<<"$lsusbOutput")"
-  
+
   while read USBDevice
   do
      vendorProduct="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$USBDevice)"
@@ -411,7 +409,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   fi
 
   lspciOutput="$(lspci -nn)" ; PCIDevices="$(grep -E "$pciREGEX" <<<"$lspciOutput")"
-  if [ -z "$PCIDevices" ]; then echo "Couldn't find any PCI devices with regex '$pciREGEX', please try another one. Panicking."; exit 1; fi 
+  if [ -z "$PCIDevices" ]; then echo "Couldn't find any PCI devices with regex '$pciREGEX', please try another one. Panicking."; exit 1; fi
   inc=0
   while read PCIDevice
   do
@@ -434,7 +432,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
         deviceDrivers["$vendorClass"]="$currentDriver" # Add it to the device driver array.
         driver="${deviceDrivers["$vendorClass"]}"
         if [ "$currentDriver" == "vfio-pci" ]
-	then
+        then
           printer "    [INFO] ${colors[green]}Already bound to $currentDriver, leaving alone."
         else
           printer "    [INFO] ${colors[green]}Detected driver ${driver}${colors[green]} is using this device. It will be re-bound on VM exit."
@@ -455,8 +453,8 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       if [ ! -z "$driver" ] && [ "$driver" != "vfio-pci" ]
       then
         printer "${colors[green]}    Unbinding from:\t${colors[none]}$driver"
-	echo "$fullBuspath" | sudo timeout --signal 9 5 tee /sys/bus/pci/devices/$fullBuspath/driver/unbind >/dev/null # Try an unbind but give up after 5 seconds with a kill-9
-	if [ $? -eq 137 ]; then bindingTimeout unbind ; exit 1 ; fi
+        echo "$fullBuspath" | sudo timeout --signal 9 5 tee /sys/bus/pci/devices/$fullBuspath/driver/unbind >/dev/null # Try an unbind but give up after 5 seconds with a kill-9
+        if [ $? -eq 137 ]; then bindingTimeout unbind ; exit 1 ; fi
 
       fi
     elif [[ $@ == *"unbind"* ]] && isDry
@@ -467,17 +465,17 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     if [[ $@ == *"vfiobind"* ]] && ! isDry
     then
         if ! [ "$currentDriver" == "vfio-pci" ]
-	then
+        then
           printer "${colors[green]}    Adding ID and binding to:\t${colors[none]}vfio-pci"
-	  echo "0x$vendor 0x$class" | sudo timeout --signal 9 5 tee /sys/bus/pci/drivers/vfio-pci/new_id >/dev/null 2>&1
+          echo "0x$vendor 0x$class" | sudo timeout --signal 9 5 tee /sys/bus/pci/drivers/vfio-pci/new_id >/dev/null 2>&1
           if [ $? -eq 137 ]; then bindingTimeout "bind via new_id" ; exit 1 ; fi
           echo "$fullBuspath" | sudo timeout --signal 9 5 tee /sys/bus/pci/drivers/vfio-pci/bind >/dev/null 2>&1   # Try and bind the PCI address for this device just in case ID already added and not automatically bound
-	  if [ $? -eq 137 ]; then bindingTimeout bind ; exit 1 ; fi
+          if [ $? -eq 137 ]; then bindingTimeout bind ; exit 1 ; fi
         fi
       while ! [ -c /dev/vfio/$iommuGroup ]
       do
         sleep 1 && ((++iommuTimeout))
-	if [ $iommuTimeout -gt 5 ]; then printer "${colors[red]}    Timed out waiting for bound device to appear under /dev/vfio" "fault" ; exit 1 ; fi
+        if [ $iommuTimeout -gt 5 ]; then printer "${colors[red]}    Timed out waiting for bound device to appear under /dev/vfio" "fault" ; exit 1 ; fi
       done
       permissionsManager takeown /dev/vfio/${iommuGroup}
       echo 1 | sudo tee /sys/bus/pci/rescan >/dev/null
@@ -491,9 +489,9 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       then
         printer "${colors[green]}    Rebinding $vendorClass back to driver:\t${colors[none]}$driver"
         echo "0x$vendor 0x$class" | sudo tee /sys/bus/pci/drivers/vfio-pci/remove_id >/dev/null &2>&1
-	echo "$fullBuspath" | sudo tee /sys/bus/pci/devices/$fullBuspath/driver/unbind       > /dev/null
-	echo "$fullBuspath" | sudo tee /sys/bus/pci/drivers/$driver/bind                 > /dev/null
-	if [ "$?" -eq "0" ]; then printer "${colors[green]}    Successfully rebound." ; else printer "${colors[red]}    Was unable to rebind it to $driver." "fault"; fi
+        echo "$fullBuspath" | sudo tee /sys/bus/pci/devices/$fullBuspath/driver/unbind       > /dev/null
+        echo "$fullBuspath" | sudo tee /sys/bus/pci/drivers/$driver/bind                 > /dev/null
+        if [ "$?" -eq "0" ]; then printer "${colors[green]}    Successfully rebound." ; else printer "${colors[red]}    Was unable to rebind it to $driver." "fault"; fi
       else
         printer "${colors[green]}    Device $vendorClass had no driver so it has been left bound to vfio-pci."
       fi
@@ -514,7 +512,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     fi
     ((++inc))
   done <<<"$PCIDevices"
-  
+
   if [[ $var == *"vfiobind"* ]] ; then echo -ne "Here are the completed pciArgs:\n    $pciArgs"; fi
 }
 
@@ -525,18 +523,18 @@ function checkVcpuCount {
 function pinVcpus {
   if [ -d /proc/$1 ]
   then
-      # First, this function will wait for all threads to be accounted for. 
+      # First, this function will wait for all threads to be accounted for.
       expectedVcpus=$(echo ${vcpuArray[@]} | wc -w)
       timeout=15 ; timer=0 ; foundVcpus=$(checkVcpuCount $1| wc -l)
-      while [ $foundVcpus -lt $expectedVcpus ] && [ $timer -lt $timeout ] 
+      while [ $foundVcpus -lt $expectedVcpus ] && [ $timer -lt $timeout ]
       do
         foundVcpus=$(checkVcpuCount $1| wc -l)
-	((++timer))
-	printer "${colors[yellow]}Waiting for vcpus to wake up... $foundVcpus found." >&2
-        sleep 1 
-      done 
+        ((++timer))
+        printer "${colors[yellow]}Waiting for vcpus to wake up... $foundVcpus found." >&2
+        sleep 1
+      done
     if [ $timer -eq $timeout ] ; then printer "${colors[red]}The vcpus did not wake up in time. This will happen on large qemu launches or slower systems but pinning failed." "fault" >&2 ; fi
-      
+
     threadPinList=$(for child in /proc/$1/task/* ; do if grep -q CPU $child/comm; then echo $(basename $child) ; fi ; done)
     printer "Successfully found $(wc -l <<< $threadPinList) vCPUs on the guest." >&2
     vcpuPosition=0
@@ -547,7 +545,7 @@ function pinVcpus {
       sudo chrt -p -f 20 $vcpuPid >/dev/null # Use FIFO scheduling on qemu vcpu threads.
       ((++vcpuPosition))
 
-    done <<< "$threadPinList" 
+    done <<< "$threadPinList"
   fi
 }
 
@@ -564,12 +562,12 @@ function checkFileExists {
 }
 
 
-#    _                  
-#   / \   _ __ __ _ ___ 
+#    _
+#   / \   _ __ __ _ ___
 #  / _ \ | '__/ _` / __|
 # / ___ \| | | (_| \__ \
 #/_/   \_\_|  \__, |___/
-#             |___/     
+#             |___/
 
 if [[ -z "$@" ]] ; then echo "No args seen. Printing help" ; printHelp ; fi
 
@@ -577,106 +575,107 @@ if [[ -z "$@" ]] ; then echo "No args seen. Printing help" ; printHelp ; fi
 while [ $# -gt 0 ]
 do
   case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
+    -bios)
+      biosPath="$2"
+      shift
+    ;;
+    -bridge)
+      bridgeArgs="$(sed 's/,/ /g' <<<$2)"
+      shift
+    ;;
     -colortest|-colourtest)
-       printer "${colors[green]}Ok, printing a color test then exiting..."
-       for i in $(sort <<< ${!colors[@]}) ; do printer "Test for: ${colors[$i]}$i " ; done
-       echo -ne ""
-       exit $?
+      printer "${colors[green]}Ok, printing a color test then exiting..."
+      for i in $(sort <<< ${!colors[@]}) ; do printer "Test for: ${colors[$i]}$i " ; done
+      echo -ne ""
+      exit $?
     ;;
-    -nocolor|-nocolors|-nocolor|-nocolors)
-       unset colors # Pretty simple color killer.
+    -extras)
+      extras="$2"
+      shift
     ;;
-    -quiet|-q|-silence|-s)
-       quiet=1 # The printer function looks for this
+    -hostaudio)
+      hostAudio="1"
+    ;;
+    -huge|-hugepages)
+      HUGEPAGES="1"
+      if [ -d "$2" ]; then hugePath="$2" ; shift ; fi
+    ;;
+    -hyperv)
+      hyperv="1"
+    ;;
+    -image)
+      declare -A disks
+      disks[$2]='' # Declare disk
+      latestDisk="$2"
+      shift
+    ;;
+    -imageformat|-format)
+      if [ ! -z "$latestDisk" ]
+      then
+        disks[$latestDisk]="$2"
+        else
+        printer "${colors[red]}-imageformat only valid after using -image at least once." "fault"
+        ((++expectLaunchIssue))
+      fi # Add the format for the most recently declared disk
+      shift
     ;;
     -iommugroups|-iommugrouping)
       printIOMMU=1
-   ;; 
-    -bridge)
-       bridgeArgs="$(sed 's/,/ /g' <<<$2)"
-       shift
+    ;;
+    -iso)
+      isos=(${isos[@]} $2)
+      shift
+    ;;
+    -looking-glass|-lookingglass|-lg)
+      lookingglass="1"
+    ;;
+    -memory|-mem)
+      memoryArgs="$2"
+      shift
+    ;;
+    -nocolor|-nocolors|-nocolor|-nocolors)
+      unset colors # Pretty simple color killer.
     ;;
     -nonet)
-       noNet=1
+      noNet=1
     ;;
-     -memory|-mem)
-       memoryArgs="$2"
-       shift
+    -pci)
+      pciREGEX="$2"
+      shift
     ;;
-     -huge|-hugepages)
-       HUGEPAGES="1"
-       if [ -d "$2" ]; then hugePath="$2" ; shift ; fi
+    -pinvcpus)
+      vcpuThreads="$2"
+      shift
+
     ;;
-     -usb)
-       usbREGEX="$2"
-       shift
+    -quiet|-q|-silence|-s)
+      quiet=1 # The printer function looks for this
     ;;
-     -pci)
-        pciREGEX="$2"
-       shift
+    -romfile|-vbios)
+      romfilePath="$2"
+      shift
     ;;
-     -iso)
-	isos=(${isos[@]} $2)
-        shift
+    -run)
+      DRY="0"
     ;;
-     -bios)
-        biosPath="$2"
-        shift
+    -usb)
+      usbREGEX="$2"
+      shift
     ;;
-     -pinvcpus)
-        vcpuThreads="$2"
-        shift
+    --help|-help)
+      printHelp
     ;;
-     -image)
-	declare -A disks
-        disks[$2]='' # Declare disk
-        latestDisk="$2"
-        shift
-    ;;
-     -imageformat|-format)
-	if [ ! -z "$latestDisk" ]
-	then
-	  disks[$latestDisk]="$2"
-	else
-          printer "${colors[red]}-imageformat only valid after using -image at least once." "fault"
-	  ((++expectLaunchIssue))
-	fi # Add the format for the most recently declared disk
-        shift
-    ;;
-     -looking-glass|-lookingglass|-lg)
-        lookingglass="1"
-    ;;
-     -extras)
-        extras="$2"
-        shift
-    ;;
-     -hyperv)
-	hyperv="1"
-    ;;
-     -hostaudio)
-        hostAudio="1"
-    ;;
-     -romfile|-vbios)
-	romfilePath="$2"
-	shift
-    ;;
-     -run)
-       DRY="0"
-    ;;
-     --help|-help)
-        printHelp
-    ;;
-     *) /bin/echo "Unknown argument $1"
-        printHelp
+    *) /bin/echo "Unknown argument $1"
+      printHelp
     ;;
     esac
     shift
 done
 
-# ____                 _____ _ _       _     _   
-#|  _ \ _ __ ___      |  ___| (_) __ _| |__ | |_ 
+# ____                 _____ _ _       _     _
+#|  _ \ _ __ ___      |  ___| (_) __ _| |__ | |_
 #| |_) | '__/ _ \_____| |_  | | |/ _` | '_ \| __|
-#|  __/| | |  __/_____|  _| | | | (_| | | | | |_ 
+#|  __/| | |  __/_____|  _| | | | (_| | | | | |_
 #|_|   |_|  \___|     |_|   |_|_|\__, |_| |_|\__|
 #                                |___/
 
@@ -729,7 +728,7 @@ else
   else
     echo "This script's -pinvcpus flag only accepts comma delimited threads at the moment such as: 0,1,2,3,4,5,6, or 0,2,4,8 -- Sorry!"
   fi
-fi 
+fi
 
   # Determine guest memory
 if [ -z "$memoryArgs" ]
@@ -895,7 +894,7 @@ do
   ((++ioCounter))
   if [ ! -z "${disks[$disk]}" ]; then diskFormat=",format=${disks[$disk]}"; else unset diskFormat ; fi
   printer "\t\t${ioCounter}\n\t\t  ${colors[blue]}Path:\t\t${colors[none]}${disk}\n\t\t${colors[blue]}  Format:\t${colors[none]}${disks[$disk]}"
-  checkFileExists "$disk" 
+  checkFileExists "$disk"
   permissionsManager takeown ${disk}
   coreArgs+=" -drive file=$disk,if=none,discard=on,id=drive${ioCounter}${diskFormat} -device virtio-blk-pci,drive=drive${ioCounter},id=virtio${ioCounter},iothread=iothread${ioCounter} -object iothread,id=iothread${ioCounter}"
 done
@@ -907,7 +906,7 @@ then
   do
     ((++ioCounter))
     printer "\t\t${ioCounter}\t${colors[blue]}\n\t\t  Path:\t\t${colors[none]}${iso}"
-    checkFileExists "$iso" 
+    checkFileExists "$iso"
     coreArgs+=" -drive file=${iso},index=${ioCounter},media=cdrom"
   done
 fi
@@ -935,7 +934,7 @@ then
   lgArgs+=" -audiodev id=audio1,driver=spice"
   lgArgs+=" -spice port=5900,addr=127.0.0.1,disable-ticketing=on,image-compression=off,seamless-migration=on"
   lgArgs+=" -chardev spicevmc,id=charredir0,name=usbredir"
-  lgArgs+=" -chardev spicevmc,id=charredir1,name=usbredir" 
+  lgArgs+=" -chardev spicevmc,id=charredir1,name=usbredir"
 fi
 
 if [ ! -z "$extras" ]
@@ -963,7 +962,7 @@ fi
 if [ -z "$noNet" ]
 then
 
-    # Generate a mac for the guest if not bridging.    
+    # Generate a mac for the guest if not bridging.
   if [ -z "$tapMAC" ]; then tapMAC="$(buildGuestMac)" ; fi
 
     # Add virtio-net for nat/bridging
@@ -981,7 +980,7 @@ if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; fi
 
   # Must do this after enumerating a PCI regex as it checks for GPUs first.
   # Create a display spicey display only if
-  # 1. The guest gets no PCI GPU 
+  # 1. The guest gets no PCI GPU
   # 2. $DISPLAY is set.
 
 if [ -z "$guestGetsGPU" ] && [[ ! -z "$DISPLAY" ]]
@@ -996,7 +995,7 @@ elif [ -z "$DISPLAY" ]
 then
   printer  "${colors[green]}DISPLAY variable unset, guest will have no graphics this session."
   coreArgs+=" -nographic -vga none"
-fi 
+fi
 
 
   # Final check for any catches if we'd rather not start qemu in this state.
