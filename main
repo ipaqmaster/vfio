@@ -58,13 +58,18 @@ function printHelp {
   printer "  ${colors[cyan]}-imageformat/${colors[cyan]}-format [raw / qcow / vdi / etc]"
   printer "    A file or blockdevice to give the guest. Complete with it's [Qemu recognised] format\n"
 
+  printer "  ${colors[cyan]}-cmdline console=ttyS0 root=/dev/vda1"
+  printer "  ${colors[cyan]}-initrd /boot/initramfs.img"
+  printer "  ${colors[cyan]}-kernel /boot/vmlinuz-linux"
+  printer "    Optonally boot directly from a kernel file with a cmdline and optional initramfs if needed\n"
+
   printer "  ${colors[cyan]}-iso /path/to/a/diskimage.iso"
   printer "    If you're installing the OS for drivers you may wish to include this\n"
 
   printer "  ${colors[cyan]}-iommugroups / -iommugrouping"
   printer "    (Try to) Print IOMMU Groups then exit. Useful for the -PCI arg.\n"
 
-  printer "  ${colors[cyan]}-bridge tap0\t${colors[none]}(Attach vm to tap0 with no bridge for direct vm to host connectivity only)"
+  printer "  ${colors[cyan]}-bridge tap0\t\t${colors[none]}(Attach vm to tap0 with no bridge for direct vm to host connectivity only)"
   printer "  ${colors[cyan]}-bridge tap0,br0\t${colors[none]}(Attach vm's tap0 to existing br0)"
   printer "  ${colors[cyan]}-bridge tap0,br0,eth0\t${colors[none]}(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)"
   printer "    If no network options are specified the default qemu NAT adapter will be used.\n"
@@ -575,6 +580,10 @@ if [[ -z "$@" ]] ; then echo "No args seen. Printing help" ; printHelp ; fi
 while [ $# -gt 0 ]
 do
   case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
+    -append|-cmdline)
+      append="$2"
+      shift
+    ;;
     -bios)
       biosPath="$2"
       shift
@@ -619,11 +628,19 @@ do
       fi # Add the format for the most recently declared disk
       shift
     ;;
+    -initrd|-rd|-init|-initramfs)
+      initrd=$2
+      shift
+    ;;
     -iommugroups|-iommugrouping)
       printIOMMU=1
     ;;
     -iso)
       isos=(${isos[@]} $2)
+      shift
+    ;;
+    -kernel|-k)
+      kernelPath=$2
       shift
     ;;
     -looking-glass|-lookingglass|-lg)
@@ -646,7 +663,6 @@ do
     -pinvcpus)
       vcpuThreads="$2"
       shift
-
     ;;
     -quiet|-q|-silence|-s)
       quiet=1 # The printer function looks for this
@@ -761,6 +777,38 @@ then
   fi
 else
   if [ ! -f "$biosPath" ] ; then printer "${colors[red]}-bios\t\tdoesn't appear to exist: ${colors[none]}\t${biosPath}" ; ((++expectLaunchIssue)) ; fi
+fi
+
+  # Eval kernel/initrd/append args if included
+if [ -n "$kernelPath" ]
+then
+  if [ ! -f "$kernelPath" ]
+  then
+    printer "${colors[red]}-kernel\t\tFile not found: $kernelPath"
+    ((++expectLaunchIssue))
+  else
+    printer "${colors[green]}-kernel\t\t specified, using provided image:\n\t\t\t${colors[none]}$(file -bz "$kernelPath"| sed 's/, /\n\t\t\t/g')"
+    kernelArgs+=" -kernel $kernelPath"
+  fi
+fi
+
+if [ -n "$initrd" ]
+then
+  if [ ! -f "$initrd" ]
+  then
+    printer "${colors[red]}-kernel\t\tFile not found: $initrd"
+    ((++expectLaunchIssue))
+  else
+    printer "${colors[green]}-initrd\t\t specified, using provided image:\n\t\t\t${colors[none]}$(file -bz "$initrd"|sed 's/, /\n\t\t\t/g')"
+    kernelArgs+=" -initrd $initrd"
+  fi
+fi
+
+if [ -n "$append" ]
+then
+  printer "${colors[green]}-append\t\t seen, including extra kernel arguments this run."
+    kernelArgs+=" -append $( sed 's/ /\\ /g'<<< $append)"
+  echo "total kernel args: $kernelArgs"
 fi
 
   # Eval Hugepages
@@ -961,7 +1009,6 @@ fi
 
 if [ -z "$noNet" ]
 then
-
     # Generate a mac for the guest if not bridging.
   if [ -z "$tapMAC" ]; then tapMAC="$(buildGuestMac)" ; fi
 
@@ -1021,18 +1068,19 @@ then
   unset quiet
   printer "Here are the completed args from this DRY run:"
   printer "Core:\n${colors[blue]} $coreArgs $hugeArgs"
-  if [ ! -z "$networkArgs" ]; then printer "Net :\n${colors[blue]}${networkArgs}"     ; fi
-  if [ ! -z "$usbArgs" ] ;    then printer "USB :\n${colors[blue]}${usbArgs}"         ; fi
-  if [ ! -z "$pciArgs" ] ;    then printer "PCI :\n${colors[blue]}${pciArgs}"         ; fi
-  if [ ! -z "$lgArgs" ] ;     then printer "Looking Glass:\n${colors[blue]}${lgArgs}" ; fi
-  if [ ! -z "$extras" ] ;     then printer "Extras:\n${colors[blue]}${extras}"        ; fi
+  if [ ! -z "$networkArgs" ]; then printer "Net :\n${colors[blue]}${networkArgs}"                   ; fi
+  if [ ! -z "$usbArgs" ]    ; then printer "USB :\n${colors[blue]}${usbArgs}"                       ; fi
+  if [ ! -z "$pciArgs" ]    ; then printer "PCI :\n${colors[blue]}${pciArgs}"                       ; fi
+  if [ ! -z "$lgArgs" ]     ; then printer "Looking Glass:\n${colors[blue]}${lgArgs}"               ; fi
+  if [ ! -z "$kernelArgs" ] ; then printer "Direct Kernel Boot Args:\n${colors[blue]}${kernelArgs}" ; fi
+  if [ ! -z "$extras" ]     ; then printer "Extras:\n${colors[blue]}${extras}"                      ; fi
   printer "\nRun the script with the same arguments again and include ${colors[red]}-run${colors[none]} to actually pass these to qemu-system-x86_64\n"
   exit 0
 else
   sudo prlimit --pid $$ --memlock=unlimited:unlimited
   set -m # Allow scripted bash job controls (fg, bg, etc)
   echo -ne "Starting qemu now.\n\n"
-  qemu-system-x86_64 $coreArgs $hugeArgs $networkArgs $usbArgs $pciArgs $lgArgs $extras &
+  eval qemu-system-x86_64 ${coreArgs} ${hugeArgs} ${networkArgs} ${usbArgs} ${pciArgs} ${lgArgs} ${kernelArgs} ${extras} &
   sudo chrt -p 1 -p $! >/dev/null                  # Set qemus threads to have high priority
   if [ ! -z $vcpuPinningAfterQemuStart ]; then pinVcpus $! & sleep 1 ; fi
   fg # Bring qemu console into foreground

@@ -118,6 +118,10 @@ Using example 2:
 
    Try to use a pulseaudio server on the host for guest audio, will also try to automatically start it.
 
+`-cmdline/-append & /-initrd/-initramfs & /-kernel/0k`
+
+Optionally pass a kernel file either self compiled or straight out of /boot to tinker with. Pass useful arguments to it with -cmdline such as console=ttyS0 and root=/dev/vda1. -initrd typically only required if kernel image built without relevant drivers or if there's licensing issues.
+
 `-quiet/-q/-silence/-s`
 
    Try to be quiet, only printing any errors we run into. Useful after your 1320th run.
