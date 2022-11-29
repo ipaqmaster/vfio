@@ -72,7 +72,7 @@ function printHelp {
   printer "  ${colors[cyan]}-nonet"
   printer "    If specified, the VM is not given a network adapter. Useful if you're passing a USB or PCI network card.\n"
 
-  printer "  ${colors[cyan]}-memory 8192M / ${colors[cyan]}-memory 8G / ${colors[cyan]}-mem xxxxM"
+  printer "  ${colors[cyan]}-memory 8192M / ${colors[cyan]}-memory 8G / ${colors[cyan]}-mem xxxxM / -m xT"
   printer "    Set VM memory (Default is half of system total memory)\n"
 
   printer "  ${colors[cyan]}-hugepages / ${colors[cyan]}-huge /optional/hugepage/mount"
@@ -629,7 +629,7 @@ do
     -looking-glass|-lookingglass|-lg)
       lookingglass="1"
     ;;
-    -memory|-mem)
+    -memory|-mem|-m)
       memoryArgs="$2"
       shift
     ;;

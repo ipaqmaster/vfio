@@ -98,7 +98,7 @@ Using example 2:
    If this argument isn't specified the default qemu NAT adapter will be used
     (NAT may be desirable for some setups)
      
-`-memory 8192M` / `-memory 8G` / `-mem 8G`
+`-memory 8192M` / `-m 8G` / `-mem 8G`
 
    Set how much memory the VM gets for this run. Argument assumes megabytes unless you explicitly use a suffix like K, M, or G.
      If this argument isn't specified the default value is HALF of the host total.
