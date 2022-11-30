@@ -681,11 +681,12 @@ do
     --help|-help)
       printHelp
     ;;
-    *) /bin/echo "Unknown argument $1"
+    *)
+      echo "Unknown argument $1"
       printHelp
     ;;
     esac
-    shift
+  shift
 done
 
 # ____                 _____ _ _       _     _
