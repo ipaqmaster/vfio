@@ -16,7 +16,7 @@ It's a good question. On the surface it's just a qemu wrapper... But I swear by 
 
     While also providing the exact QEMU arguments it's about to use if you plan to dive in manually yourself.
 
-  * Takes as many virtual disks or iso's as you want to pass in.
+  * Takes as many virtual disks or iso's as you want to pass in with an iothread on the host for each virtual disk.
 
     Or if you're passing in an entire disk array, save the overhead and pass the entire HBA controller with (`-PCI 'SATA'`)
 
@@ -335,7 +335,8 @@ For best VM performance in any scenario:
 * rcu_nocb_poll                      # Enforce the above by polling only ever so often rather than having cores handle it themselves
 * systemd.unified_cgroup_hierarchy=0 # Enables systemd v1 cgroups
 
-6. Passing in a real disk such as using the -pci argument with a full NVME controller to give your guest a raw NVME of its own to use (Assuming somebody has a free M.2 slot and NVME to put into it) will always perform much better than any QEMU disk method, even though this script creates an iothread for the guest, you can't go wrong with raw NVME passthrough. The next closest contender would be a raw .img for the guest on a lightweight FS suchas ext4, with a goal of minimizing overhead, or just raw disk/partition access *via* a virtio disk.
+6. Passing in a real disk to your guest to boot from such as a dedicated NVME controller with the -pci argument will always perform much better than any QEMU disk method, even though this script creates an iothread per guest disk, you can't go wrong with raw NVME passthrough.
+   The next closest contender would be a raw partition on the host passed as a virtio disk, or a raw.img file on a lightweight host FS such as ext4 (with a goal of minimizing overhead)
 
 ## Script usage examples
 
