@@ -79,7 +79,7 @@ In general this script has been very useful in my tinkering even outside VFIO ga
 
 ## General usage arguments
 
-`-avoidVirtio/-noVirtio`
+`-avoidVirtio` / `-noVirtio`
 
   If set, tries to pick more traditional QEMU devices for the best compatibility with a booting guest.
   Likely to be useful during new Windows installs if you don't have the virtio iso to pass in with the installer iso.
@@ -94,7 +94,7 @@ In general this script has been very useful in my tinkering even outside VFIO ga
   Prints host core count and shares which threads belong to which core
   Useful knowledge for setting up isolation in kernel arguments and when pinning the guest with -pinvcpus
 
-`-ignorevtcon / -ignoreframebuffer / -leavefb / -leaveframebuffer / leavevtcon`
+`-ignorevtcon` / `-ignoreframebuffer` / `-leavefb` / `-leaveframebuffer` / `leavevtcon`
     Intentionally leave the vtcon and efi-framebuffer bindings alone 
     Primarily added to work around kernel bug 216475 (https://bugzilla.kernel.org/show_bug.cgi?id=216475)
     Prevents restoring vtcon's at a cost of as many GPU swaps from host to guest as desired.
@@ -145,7 +145,7 @@ Using example 2:
    Set how much memory the VM gets for this run. Argument assumes megabytes unless you explicitly use a suffix like K, M, or G.
      If this argument isn't specified the default value is HALF of the host total.
 
-`-hugepages / -huge / -hugepages /optional/mountpoint/to/custom/hugepage`
+`-hugepages` / `-huge` / `-hugepages /optional/mountpoint/to/custom/hugepage`
 
    Tries to allocate hugepages for the VM dynamically based on how much memory it will be given (defined with -memory). Hugepages for a VM with frequent random memory access such as in gaming can be much snappier than your regular process accessing regular memory.
    If no argument is given it'll use /dev/hugepages which is often 2MB per page. The script drops host memory cache and then runs compact_memory before allocating with the aim of less fragmentation in hugepages. Using this argument will also clean up after itself by setting pages back to 0, reclaiming memory for the host. But only if it wasn't already preallocated before running the script.
@@ -160,11 +160,11 @@ Using example 2:
 
    Try to use the host's audio server for guest audio and also tries to start it.
 
-`-cmdline/-append & /-initrd/-initramfs & /-kernel/-k`
+`-cmdline` / `-append` & `-initrd`  / `-initramfs` & `-kernel`  / `-k`
 
 Optionally pass a kernel file either self compiled or straight out of /boot to tinker with. Pass useful arguments to it with -cmdline such as console=ttyS0 and root=/dev/vda1. -initrd typically only required if kernel image built without relevant drivers or if there's licensing issues.
 
-`-quiet/-q/-silence/-s`
+`-quiet` / `-q `/ `-silence` / `-s`
 
    Try to be quiet, only printing any errors we run into. Useful after your 1786th run.
 
@@ -215,7 +215,7 @@ This example would catch any:
   Adds a 64MB shared memory module for the Looking Glass project and a spice server onto the guest for input from host during Looking Glass usage.
   You will still need to go into your VM add the VirtIO IVSHMEM driver to the "PCI standard RAM Controller" which appears in Device Manager under System Devices before Looking Glass will function.
 
-`-romfile/-vbios /path/to/vbios.bin`
+`-romfile` / `-vbios /path/to/vbios.bin`
    Accepts a file path to a rom file to use on any detected GPU during -pci argument processing.
    Some host configurations will need this even with a modern GPU. Older NVIDIA gpus need this too if not isolated from boot time.
    
@@ -299,10 +299,10 @@ If you've already isolated a GPU for the guest (Explicitly isolated from boot, o
 
 ### Passthrough gotchas
 
-1. If you're on a NVIDIA card including 2000,3000 and 4000 generations but are experiencing a blank screen or monitors just going into standby at VM boot, ensure you have isolated correctly, or if you already know your GPU isn't isolated, consider using a patched VBIOS file so the guest can just reinitialize the card itself.
+1. If you're on a NVIDIA card including 2000,3000 and 4000 generations but are experiencing a blank screen or monitors just going into standby at VM boot, ensure you have isolated correctly, or if you already know your GPU isn't isolated then consider using a patched VBIOS file so the guest can just reinitialize the card itself.
 
-2. If your guest has the NVIDIA driver installed, you may find your screen starts black (And you miss the TianoCore boot process)
-but eventually gets a video signal once the guest reaches the login screen and the NVIDIA driver kicks in to resuscitate the card itself.
+2. If your guest has the NVIDIA driver installed, you may find your screen starts black (And you visually miss the TianoCore UEFI boot process)
+but eventually gets a video signal once the guest reaches the login screen and the NVIDIA driver kicks in to resuscitate the card itself. This isn't ideal but it can also save the day like that.
 
 
 ### Performance woes?
