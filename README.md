@@ -2,45 +2,52 @@
 
 ## About this script
 
-This is a bash script I've put a lot of love into trying to avoid defining pci-address-hardcoded libvirt VMs, among other virtualization test cases which it helps make very quickly for me.
+This is a bash script I've put a lot of love into trying to avoid defining VMs in libvirt with hardcoded host PCI addresses, among other virtualization test cases which it helps make very quick for me.
 
-It starts a VM by calling `qemu-system-x86_64` directly but it automatically handles a lot of things for me all conveniently there for me to revisit or tweak as one-liners in my Bash history. It also happens to make VM gaming in a Windows VM a pinch on my single-gpu 2080Ti host. Now if only NVIDIA would *officially* support vGPUs on their consumer hardware...
+It starts a VM by calling `qemu-system-x86_64` directly but can automatically handle extra arguments all with the convenience of a terminal with history and the ability to just backspace something out if you don't want it in the guest.
 
-optional network bridging, hugepage allocation, USB passthrough arguments, PCI passthrough arguments complete with automatic driver rebinding and other scenarios useful for gaming or other tinkering. It's been great for minimizing my headaches.
-
-It makes starting a Win10 vm for gaming quick and easy then sends me back to the lightdm login screen once the VM shuts down after returning all devices back to their driver. I'm Hoping the script can be helpful to others as I continue to tinker with it. I've even pulled out the old PC with two GPUs just to play with and add Looking Glass support to the script.
+It also happens to make Windows VM gaming a pinch on my single-gpu 2080Ti host and older dual-gpu host with Looking Glass. Now if only NVIDIA would *officially* support vGPUs onafaf  their consumer hardware...
 
 ## What does it actually do
 
 It's a good question. On the surface it's just a qemu wrapper... But I swear by it for any VM/VFIO screwery because it also:
 
-  * Gives a good rundown of all the extra things it's been asked to do in default 'Dry' mode so it doesn't wreak havoc without saying go(-run) first.
+  * Gives a good rundown of all the extra things it's been asked to do in default 'Dry' mode so it doesn't wreak havoc without saying go(`-run`) first.
+
     While also providing the exact QEMU arguments it's about to use if you plan to dive in manually yourself.
 
   * Takes as many virtual disks or iso's as you want to pass in.
-    Or if you're passing in an entire disk array, save the overhead and just pass the entire HBA controller with something like (-PCI 'SATA')
+
+    Or if you're passing in an entire disk array, save the overhead and pass the entire HBA controller with (`-PCI 'SATA'`)
+
     (Assuming that doesn't include your host disk!)
 
   * Takes an optional regular expression of PCI and USB devices to pass to the VM when starting it.
-    (My favorite is `-PCI 'NVIDIA|USB'` to just give it my card and all host USB controllers, jumping right in)
+  * 
+    (My favorite is `-PCI 'NVIDIA|USB'` to give it my card with all host USB controllers)
 
-  * Automatically unbinds all specified PCI devices from their driver's onto vfio-pci if they're not already on it.
+  * *Automatically unbinds all specified PCI devices from their driver's onto vfio-pci if they're not already on it.
+
     (No need for early host driver blocking or early PCI device vfio binds)
 
   * ***Automatically REBINDS all PCI devices back to their originating driver*** on guest exit (When applicable)
 
   * Automatically kills the display-manager if the GPU is stuck unbinding for a guest to use (Unavoidable in single GPU scenarios)
-    but also rebinds the card back to its driver on guest exit and restart the DM back to the login screen.
+
+    But also rebinds the card back to its driver on guest exit and restarts the DM back to the login screen.
+    
     Almost seamless...
 
-  * Makes network bridges automatically or attaches the VM to an existing bridge with a tap adapter (Standard VM stuff) giving
-    your VM a true Layer 2 network presence on your LAN, DHCP, direct port exposure for RDP, SSH, and all.
+  * Makes network bridges automatically or attaches the VM to an existing bridge with a tap adapter (Standard VM stuff) giving your VM a true Layer 2 network presence on your LAN, DHCP, direct port exposure for RDP, SSH, and all.
+
+
     (Useful to avoid the default "One way trip" nat adapter)
   
   * Takes optional vcpuPinning arguments if you've isolated cores on your host to help avoid stutter.
 
   * Can describe your host's IOMMU Groups and CPU thread to core pairs so you know the true CPU topology to isolate and pin with appropriately.
-    (For now core isolation must be handled outside the script. Sorry! it annoys me too. But the best time to isolate is in the kernel arguments which I provided powerful examples lower down!)
+    
+    *(For now core isolation must be handled outside the script. Sorry! it annoys me too. But the best time to isolate is in the kernel arguments, of which I've provided some powerful examples lower down.)*
 
   * Dynamically allocate hugepages for the VM *on the fly* if host memory isn't too fragmented, otherwise it will notice existing hugepages and use them if there's enough free from earlier/boot time allocation.
 
@@ -337,21 +344,25 @@ Note: `-run` is omitted for obvious reasons.
 
 
 If you aren't ready to do any passthrough and just want to start the VM in a regular window (Installation, Drivers, etc.):
-  `./main -image /root/windows.img -imageformat raw -iso /tmp/Installer.iso`
+
+`./main -image /root/windows.img -imageformat raw -iso /tmp/Installer.iso`
 
 If a host has been booted with isolated cores you can tell the script to pin the guest to those only:
-  `./main -image /root/windows.img -imageformat raw -pinvcpus 0,1,2,3,4,5`
+
+`./main -image /root/windows.img -imageformat raw -pinvcpus 0,1,2,3,4,5`
   
   This example starts the VM with only host threads 0 to 5 (The first 3 cores on some multi-threaded hosts, check -cputhreads to see your true host thread to core topology)
   Useful if a VM experiences stuttering from host load.
 
 An example run with passthrough could look like:
-  `./main -image /dev/zvol/poolName/windows,format=raw -bridge tap0,br0,eth0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'`
+
+`./main -image /dev/zvol/poolName/windows,format=raw -bridge tap0,br0,eth0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'`
   
   This example would (if seen) pass all regex-matching USB and PCI devices and rebind the PCI devices if applicable.
   It would also provision network bridge br0 and attach tap0 to the bridge with your host interface. Then give tap0 to the VM.
 
 An advanced example giving a guest 8G of memory and booting the host's kernel with arguments to boot from the first partition of a provided virtual disk.
 Includes an initramfs for the ext4 driver, which will be needed to read the ext4 rootfs partition of the virtua disk provided.
-Also doesn't use VirtIO becuase nor the kernel or initramfs have the virtio_scsi driver as a built-in.
+Also doesn't use VirtIO becuase nor the kernel or initramfs have the virtio_scsi driver as a built-in:
+
   `./main -m 8G -kernel /boot/vmlinuz-linux -append 'root=/dev/sda1 rw ' -initramfs /boot/initramfs-linux.img -image /zfstmp/kernelbuild/test.ext4.qcow2 -imageformat qcow2 -novirtio -run`
