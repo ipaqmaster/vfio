@@ -1,61 +1,103 @@
 # vfio
 
-## About it
+## About this script
 
-This is a bash script I've made to start virtual machines by calling `qemu-system-x86_64` directly but it automatically handles optional network bridging, hugepage allocation, USB passthrough arguments, PCI passthrough arguments complete with automatic driver rebinding and other scenarios useful for gaming or other tinkering. It's been great for minimizing my headaches.
+This is a bash script I've put a lot of love into trying to avoid defining pci-address-hardcoded libvirt VMs, among other virtualization test cases which it helps make very quickly for me.
+
+It starts a VM by calling `qemu-system-x86_64` directly but it automatically handles a lot of things for me all conveniently there for me to revisit or tweak as one-liners in my Bash history. It also happens to make VM gaming in a Windows VM a pinch on my single-gpu 2080Ti host. Now if only NVIDIA would *officially* support vGPUs on their consumer hardware...
+
+optional network bridging, hugepage allocation, USB passthrough arguments, PCI passthrough arguments complete with automatic driver rebinding and other scenarios useful for gaming or other tinkering. It's been great for minimizing my headaches.
 
 It makes starting a Win10 vm for gaming quick and easy then sends me back to the lightdm login screen once the VM shuts down after returning all devices back to their driver. I'm Hoping the script can be helpful to others as I continue to tinker with it. I've even pulled out the old PC with two GPUs just to play with and add Looking Glass support to the script.
 
-## What does it do
+## What does it actually do
 
-This script starts a VM using qemu-system-x86_64 directly but it can optionally:
+It's a good question. On the surface it's just a qemu wrapper... But I swear by it for any VM/VFIO screwery because it also:
 
-  * Give you a good rundown of what it's about to do in dry mode (Default) without -run, also printing the QEMU arguments it would've used.
+  * Gives a good rundown of all the extra things it's been asked to do in default 'Dry' mode so it doesn't wreak havoc without saying go(-run) first.
+    While also providing the exact QEMU arguments it's about to use if you plan to dive in manually yourself.
 
-  * Include virtual disks and any ISOs you may wish to boot with
+  * Takes as many virtual disks or iso's as you want to pass in.
+    Or if you're passing in an entire disk array, save the overhead and just pass the entire HBA controller with something like (-PCI 'SATA')
+    (Assuming that doesn't include your host disk!)
 
-  * Take a regular expression of PCI and USB devices to pass to the VM when starting it.
+  * Takes an optional regular expression of PCI and USB devices to pass to the VM when starting it.
+    (My favorite is `-PCI 'NVIDIA|USB'` to just give it my card and all host USB controllers, jumping right in)
 
-  * Automatically generate qemu arguments for PCI and USB matches while automatically unbinding matched PCI devices from their current driver and attaching them to the vfio-pci driver if not already done, without any need for driver blocking or early vfio binding at boot time.
+  * Automatically unbinds all specified PCI devices from their driver's onto vfio-pci if they're not already on it.
+    (No need for early host driver blocking or early PCI device vfio binds)
+
+  * ***Automatically REBINDS all PCI devices back to their originating driver*** on guest exit (When applicable)
+
+  * Automatically kills the display-manager if the GPU is stuck unbinding for a guest to use (Unavoidable in single GPU scenarios)
+    but also rebinds the card back to its driver on guest exit and restart the DM back to the login screen.
+    Almost seamless...
+
+  * Makes network bridges automatically or attaches the VM to an existing bridge with a tap adapter (Standard VM stuff) giving
+    your VM a true Layer 2 network presence on your LAN, DHCP, direct port exposure for RDP, SSH, and all.
+    (Useful to avoid the default "One way trip" nat adapter)
   
-  * Rebind PCI devices back to the driver they came from after the VM shuts down like it never happened and restart your display-manager if it were running.
+  * Takes optional vcpuPinning arguments if you've isolated cores on your host to help avoid stutter.
 
-  * Make a network bridge on the host during VM runtime or attach the VM to an existing network bridge; Giving the VM its own Layer 2 mac-address presence on the existing home LAN.
-  (Useful for setting a DHCP reservation, connecting to services running on the VM such as RDP, avoiding host-NAT nightmares)
-  
-  * Pin the VM's vcpu qemu threads to specific host CPU threads to help avoid stutter.
-    (Useful if core isolation is configured in the host's boot parameters or if it has an isolating cpu-set defined for improved VM performance)
+  * Can describe your host's IOMMU Groups and CPU thread to core pairs so you know the true CPU topology to isolate and pin with appropriately.
+    (For now core isolation must be handled outside the script. Sorry! it annoys me too. But the best time to isolate is in the kernel arguments which I provided powerful examples lower down!)
 
-  * Dynamically allocate hugepages for the VM, or use existing pages if enough are free and preallocated (such as, at boot time in kernel arguments)
+  * Dynamically allocate hugepages for the VM *on the fly* if host memory isn't too fragmented, otherwise it will notice existing hugepages and use them if there's enough free from earlier/boot time allocation.
 
-  * Enable Looking Glass shared memory + spice keyboard/mouse input for when you have more than one GPU on the host and want to stay in your Linux environment.
+  * Optionally enables Looking Glass support if you have a second i/dGPU on the host to continue graphically with while the guest runs.
 
-  * Pass a romfile for any GPU pci devices being passed through, if needed for your configuration.
+  * Takes an optional romfile argument for any GPU devices being passed through if needed for your setup.
 
-  * Include common HyperV enlightenments to either aid with performance in some scenarios or to help kernel-based Anti-Cheat agents play along.
+  * Optionally includes key hyperv enlightenments for Windows guest performance.
 
-  * And sometimes more.
+  * And sometimes more! (*There's most likely many more arguments below*)
 
 ## What hosts and installs are supported?
 
-It seems any distribution running a modern Linux kernel, the latest qemu and all on a host with either Intel's VT-d or AMD-Vi (May just be labelled IOMMU in bios) appears suitable. And of course, don't forget to add the iommu arguments kernel's boot arguments. If you are not using Archlinux, you may have to manually specify the OVMF path using `-bios`, but that would be the worst of it. Confirmed working in Ubuntu 20.04 and 18.04 as well.
+Put short, it's designed for Archlinux but confirmed working in Ubuntu 20.04 and 18.04 as well.
 
-Even my partially retired desktop from 2011 with a 3930K CPU and x79 motherboard can run this script using a Looking Glass window into the guest in X with a GPU for the host.
+It seems any distribution running a modern Linux kernel and the latest QEMU will do. The host will need to support either Intel's VT-d or AMD-Vi (May just be labelled IOMMU in bios) While even my older PC from the early 2010s supports these modern boards do a much better job for latency and performance.
+Also don't forget to add the relevant AMD or Intel VFIO arguments to your kernel's boot arguments. On some distros straying enough from the rolling lifestyle, you may need to specify the OVMF path using `-bios`, but that should be the worst of it. 
 
-On my latest May 2020 desktop upgrade (3900x, DDR4@3600, single 2080Ti, M.2 SSD) I play Overwatch, MK11, Battlefield 4 and more in a VM on this machine frequently. As for performance I genuinely cannot tell it's a VM (unless I verify in Device Manager of course). There's no stutters or any other telltale signs that its not a real computer; which I find to be particularly important in multiplayer titles.
+Even my partially retired desktop from 2011 with a 3930K CPU and x79 motherboard can run this script using a Looking Glass window into the guest through X via a second GPU for the host.
+
+On my 2020 PC build (3900x, DDR4@3600, single 2080Ti, M.2 SSD in the back slot *just for the guest*) I play Overwatch, Mortal Kombat, Battlefield and more in a VM on this machine with ease. As for performance I'm glad to be able to say I genuinely can't tell I'm in a VM (without checking Device Manager of course). There's no stutters or any other telltale signs that its not a real computer in gameplay when pinning and isolation are done correctly; which I find to be particularly important in multiplayer titles.
 
 
 # Why make this
-The #0 reason is "fun" but while WINE and Proton have gotten me far over the past few years sometimes:
-  1. I may lack the time to help a stubborn title run,
-  2. A title may be known not to work in Linux despite best efforts,
-  3. A title may employ a driver-level Anti-Cheat solution, completely borking the multiplayer experience in Linux (Which you can't just throw at WINE).
+The #0 reason is "fun", I love my field and the 'edutainment' I've always gained from it fuels the fire; but while WINE and Proton have gotten me far over the past few years:
+  1. It lets me do a lot of "scratch pad" debugging/testing/kernel patching/hacking and other test which can be entirely forgotten in a blink.
+     (Or by hitting ^a^x in QEMU's terminal window which might be faster)
+  2. A game title may employ a driver-level Anti-Cheat solution, completely borking the multiplayer experience in Linux (Which you can't just throw at WINE).
+  3. Overall, a title may be known not to work in Linux despite best efforts and time commitment.
 
-Furthermore, instead of using libvirtd and defining a Windows VM in a more "set and forget" attitude, I figured I'd write my own all-in-one manager so the addition, exclusion and modification of what I'm passing through is as easy as a quick argument change in my terminal to influence the next VM boot. In general, this script has been very useful in my tinkering even outside VFIO gaming and at this point I swear by it for quick and easy screwing around with vfio and more even just on the desktop.
+Furthermore, instead of hardcoding a VM in libvirtd this script lets me take on less of a "set and forget" attitude, only to come back once a bios update or setting change causes PCI addresses to change (Common online complaint I see)
+I figured I'd write my own all-in-one manager for the job and editing what I want to send to a VM is a easy as pressing the up arrow in my Bash history and just changing the line calling this script with no troubles.
+In general this script has been very useful in my tinkering even outside VFIO gaming and at this point I swear by it for quick and easy screwing around just on the desktop.
 
 # The script, arguments, examples and an installation example
 
 ## General usage arguments
+
+`-avoidVirtio/-noVirtio`
+
+  If set, tries to pick more traditional QEMU devices for the best compatibility with a booting guest.
+  Likely to be useful during new Windows installs if you don't have the virtio iso to pass in with the installer iso.
+  Also useful in other departments such as testing kernels and initramfs combinations where virtio isn't a kernel inbuilt or initramfs as a late module.
+
+`-iommugroups` / `-iommugrouping`
+
+  Prints IOMMU groupings if available then exists.
+
+ `-cputhreads` / `-showpairs` / `-showthreads` / `-showcpu`
+
+  Prints host core count and shares which threads belong to which core
+  Useful knowledge for setting up isolation in kernel arguments and when pinning the guest with -pinvcpus
+
+`-ignorevtcon / -ignoreframebuffer / -leavefb / -leaveframebuffer / leavevtcon`
+    Intentionally leave the vtcon and efi-framebuffer bindings alone 
+    Primarily added to work around kernel bug 216475 (https://bugzilla.kernel.org/show_bug.cgi?id=216475)
+    Prevents restoring vtcon's at a cost of as many GPU swaps from host to guest as desired.
 
 `-image /dev/zvol/zpoolName/windows -imageformat raw`
 
@@ -65,11 +107,11 @@ Furthermore, instead of using libvirtd and defining a Windows VM in a more "set 
 
 `-iso /path/to/a/diskimage.iso`
 
-   If set, attaches an ISO to qemu with an incrementing index id. Can be specified as many times needed for multiple CDs. Good for liveCDs or installing an OS with an optional driver-cd.
+   If set, attaches an ISO to QEMU with an incrementing index id. Can be specified as many times needed for multiple CDs. Good for liveCDs or installing an OS with an optional driver-cd.
 
-`-bridge tap0,br0	(Attach vm's tap0 to existing br0)`
+`-bridge tap0,br0       (Attach vm's tap0 to existing br0)`
 
-`-bridge tap0,br0,eth00	(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)`
+`-bridge tap0,br0,eth0  (Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)`
 
    Takes a bridge name, interface and tap interface name as arguments.
    
@@ -93,11 +135,11 @@ Using example 2:
      
 5. Brings all 3 up and runs dhclient on br0
      
-6. During cleanup, unslaves the interface and deletes br0+tap0. Restores NetworkManager if it were found to be running.
+6. During cleanup, frees the interface from the bridge and deletes the bridge and tap interface. Restores NetworkManager if it were found to be running.
      
-   If this argument isn't specified the default qemu NAT adapter will be used
+   If this argument isn't specified the default QEMU NAT adapter will be used
     (NAT may be desirable for some setups)
-     
+
 `-memory 8192M` / `-m 8G` / `-mem 8G`
 
    Set how much memory the VM gets for this run. Argument assumes megabytes unless you explicitly use a suffix like K, M, or G.
@@ -116,15 +158,15 @@ Using example 2:
 
 `-hostaudio`
 
-   Try to use a pulseaudio server on the host for guest audio, will also try to automatically start it.
+   Try to use the host's audio server for guest audio and also tries to start it.
 
-`-cmdline/-append & /-initrd/-initramfs & /-kernel/0k`
+`-cmdline/-append & /-initrd/-initramfs & /-kernel/-k`
 
 Optionally pass a kernel file either self compiled or straight out of /boot to tinker with. Pass useful arguments to it with -cmdline such as console=ttyS0 and root=/dev/vda1. -initrd typically only required if kernel image built without relevant drivers or if there's licensing issues.
 
 `-quiet/-q/-silence/-s`
 
-   Try to be quiet, only printing any errors we run into. Useful after your 1320th run.
+   Try to be quiet, only printing any errors we run into. Useful after your 1786th run.
 
 `-bios '/path/to/that.fd'`
 
@@ -132,7 +174,7 @@ Optionally pass a kernel file either self compiled or straight out of /boot to t
 
 `-usb 'AT2020USB|SteelSeries|Ducky|Xbox|1425:5769'`
 
-   If set, the script enumerates `lsusb` with this regex and generates qemu arguments for passing them through when the VM starts.
+   If set, the script enumerates `lsusb` with this regex and generates QEMU arguments for passing them through when the VM starts.
 
 This example would catch any:
      
@@ -148,7 +190,8 @@ This example would catch any:
 
 `-pci 'Realtek|NVIDIA|10ec:8168'`
 
-   If set, the script enumerates `lspci` and generates arguments like the above. But also unbinds them from their current drivers (If any) and binds them to vfio-pci. Remembers what they were beforehand for rebinding after the VM shuts down.
+   If set, the script enumerates `lspci` for the set regex and generates qemu arguments as it does for `-usb`. In `-run` mode, it also unbinds them from their current drivers (If any) and binds them to vfio-pci.
+   It remembers what they were bound to beforehand for rebinding once the VM shuts down.
    
 This example would catch any:
      
@@ -167,88 +210,148 @@ This example would catch any:
 
   A quick terminal color test then exits.
 
-`-iommugroups` / `-iommugrouping`
-
-  Prints IOMMU groupings if available then exists.
-
 `-looking-glass` / `-lookingglass` / `-lg`
 
   Adds a 64MB shared memory module for the Looking Glass project and a spice server onto the guest for input from host during Looking Glass usage.
   You will still need to go into your VM add the VirtIO IVSHMEM driver to the "PCI standard RAM Controller" which appears in Device Manager under System Devices before Looking Glass will function.
 
-`-extras '-device xyz -device abc -device ac97 -display gtk -curses'`
-
-   If set adds extra arbitrary commands to the cmdline of qemu (Once invoked)
-   Useful for `-device ac97` to get some quick and easy audio support if the host is running pulseaudio.
-
 `-romfile/-vbios /path/to/vbios.bin`
    Accepts a file path to a rom file to use on any detected GPU during -pci argument processing.
+   Some host configurations will need this even with a modern GPU. Older NVIDIA gpus need this too if not isolated from boot time.
    
-   Please note, you typically only need this if you're on a setup where the host *must* initialize its GPU. Such as a Single GPU host with no onboard graphics.
-   That is to say.. if your GPU is properly isolated from the host from boot and bios is told to initialize on either a different GPU or onboard graphics..
-   you won't need this argument. But it is harmless to include.
+   If you're on a single-dGPU host passthrough to a guest on an older NVIDIA card, you will likely require this.
+   If you experience "black screen" issues on guest startup it's often a problem solvable with a vbios.
+   My 2080Ti has days where it can just fire up in a guest and others where it needs a vbios to light up the screen during passthrough. Probably bios setting dependant in my case.
    
    If you're going to use a vbios dump, you should confirm it's safe before using it on a GPU the rom-parser github project is good to check this.
-   Otherwise you can typically just download your model's vbios from TechPowerup and patch it with a project like NVIDIA-vBIOS-VFIO-Patcher before using it.
+   Otherwise you can usually just find a preexisting dump for your model's vbios on TechPowerup and patch it with say, NVIDIA-vBIOS-VFIO-Patcher.
    
+`-extras '-device xyz -device abc -device ac97 -display gtk -curses'`
+
+   If set adds extra arbitrary commands to the cmdline of QEMU (Once invoked)
+   Useful for `-device ac97` to get some quick and easy audio support if the host is running pulseaudio.
+
 `-run`
 
-  Actually run. The script runs dry by default and outputs qemu arguments and environment information without this flag.
+  Actually run. The script runs dry by default and outputs QEMU arguments and environment information without this flag.
   Especially useful for testing PCI regexes without unbinding things first try, but good for general safety.
 
 ## Notes and Gotchas.
-  - If you don't pass through a graphics card and your $DISPLAY variable is set (The script looks for a VGA device to make a decision) the script will give the VM a virtual screen so you can actually see, just in a normal qemu popup window like any other on your desktop. This is useful for testing the VM actually boots before passing through hardware or to test OSes, liveCDs, other hardware configurations and so on.
-  - The absolute minimum requirement to do anything useful started is the `-image` and/or `-iso` arguments with OVMF installed. You can install an OS, the VirtIO and Nvidia drivers if needed and have it ready for a passthrough on the next boot.
-  - The default networking mode is QEMU's user-mode networking (NAT through host IP).
-    - This is usually fine but if you want to talk to the guest from the outside, such as your local network you'll want to consider using `-bridge`.
+  - If you don't pass through a graphics card while your $DISPLAY variable is set (e.g. launching this script in a terminal in your current graphical session)
+    The script will give the VM a virtual screen and pop up like any other window so you can *see*.
+    You can prepend DISPLAY='' to the script command line to force the guest to have no virtual VGA screen. This is useful if you're using a NIX based OS which can take an argument such as console=ttyS0 to be accessible from the ter minal you launched from .
+  - The absolute minimum requirement to do anything useful is the `-image` and/or `-iso` arguments with OVMF installed. You can install an OS, extra drivers can always wait until later.
+  - The default networking mode is QEMU's user-mode networking (NAT through host IP).This is fine for most people but if you expect to be able to initiate outside connections to the guest, consider using `-bridge`
   - This script makes use of VirtIO for networking. Unless you're passing through a USB/PCI network adapter and use `-nonet`, you'll want to install the VirtIO drivers into the guest before expecting virtual-networking to work.
-  - The CPU topology is 'host' by default. The VM will think it has the host's CPU model.
-  - By default the VM's CPU topology uses ALL host cores and HALF the host's total memory
+    If you can't use virtio drivers for whatever reason, you can specify -noVirtio, but the performance penalty will be noticible.
+  - The CPU topology this sets is 'host'. So the VM will think it has the host's CPU model. This is usually a good idea.
+  - Without specifying - The VM will use ALL host cores and HALF the host memory.
       You can use -pinvcpus to cherry pick some host cpu threads for the VM to execute on and this will also set the VM's vcpu count appropriately to match.
-        This is very useful if the host has enough load to interupt the VM during normal operation.
-        If your host doesn't have the cpu load headroom for a gaming guest or the VM experiences stuttering, Consider using -pinvcpus to isolate guest cores.
+        This is very useful if the host produces enough load to cause stuttering in the VM during normal operation.
+        If your host doesn't have the cpu load headroom for a gaming guest or the VM experiences stuttering, Consider using -pinvcpus and isolateing the cores you pick for the guest.
         
-## Getting started with a fresh Win10 install
+## The VM and Getting started with a fresh install of something (Windows? Linux? Direct kernel booting?)
 
-I recommend starting the install as an X window then doing GPU passthrough once the guest is prepared. If your GPU of choice is already completely isolated since boot or your have a romfile to pass through with the GPU you could pass it through and include -romfile to do the VM's OS and driver installation with the GPU already passed through.
+Right out the gate, if you're "feeling lucky" (Have prepared accordingly) you can start the script with your GPU, some usb input device like a keyboard so you can actually configure it, an installer ISO, an optional vbios if you're having initialization issues and just do it all in one take.
 
-1. Get the latest virtio ISO as drivers for the VM: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/
+Try to include the virtio ISO too and use virtio hardware instead of setting -noVirtio, virtio devices perform much better than a lot of the traditional stuff (Theoretical 10Gbe link between host and guest for example) and this script creates an ioThread for the guest's disk activity when using virtio.
 
-2. Get the latest Win10 ISO from Microsoft: https://www.microsoft.com/en-au/software-download/windows10ISO
+Otherwise, feel free to start the script just specifying your -iso of choice with QEMU's default virtual GPU will pop up a window for you to get started in. Once you've installed everything you need you can shut the guest down and try GPU passthrough (With peripherals!)
 
-3. Create storage for your VM, this may involve commands like the below:
+If you've already isolated a GPU for the guest (Explicitly isolated from boot, often also involves telling the bios which GPU to use/ignore) or have a patched vbios ready to specify with -vbios so the guest can re-initialize the card for itself then you too can start the install process with the card included from install. You'll want to passthrough at least a keyboard with -usb, or you can specify 'USB' in the -PCI argument regex to capture ALL of your hosts USB card inputs with your GPU too. Passing through entire USB/SATA/NVME controllers is ideal; much better performance than having the guest access the same devices through virtual hardware.
 
-     `qemu-img create -f qcow2 myWin10VM.qcow2 100G # classic sparse qcow2`
+### In depth installation steps for a Windows VM
 
-     `dd if=/dev/zero of=myvm.img bs=1G count=100   # Preallocated raw example with DD`
+1. You *should* use virtio hardware with your VM, it performs better than the legacy-supporting virtual hardware and you can get the ISO to pass with your installer ISO here: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio
 
-     `zfs create -V100G myPool/myVMDisk             # zfs backed virtual block-device (ZVOL)`
+*Don't want to use virtio drivers for your guest or can't fetch the ISO? You can launch this script with -novirtio to use legacy devices like e1000e for networking which should be compatible with most barebones OSes
+
+2. Get the latest Win ISO you wish to install from Microsoft's site: https://www.microsoft.com/en-au/software-download/
+
+3. Create storage for your VM; It has to live somewhere. Example commands below.
+
+     `QEMU-img create -f qcow2 myWin10VM.qcow2 100G # A classic sparse qcow2`
+
+     `dd if=/dev/zero of=myvm.img bs=1G count=100   # A preallocated raw example with DD, will probably perform better if you're not on a QoW Filesystem`
+
+     `zfs create -V100G myPool/myVMDisk             # zfs backed virtual block-device (ZVOL), doesn't perform as well as I'd like but very tidy`
 
 4. Start the script following something like the below example:
 
-     `./main -image /dev/zvol/myPool/myVMDisk -imageformat raw -iso ~/Downloads/Win10_20H2_v2_English_x64.iso -iso /nas/common/ISOs/virtio-win-0.1.189.iso`
+     `./main -image /dev/zvol/myPool/myVMDisk -imageformat raw -iso /tmp/Win10_20H2_v2_English_x64.iso -iso /nas/common/ISOs/virtio-win-0.1.189.iso`
+* Or if you can't provide the guest with virtio drivers yet:
+     `./main -image /dev/zvol/myPool/myVMDisk -imageformat raw -iso /tmp/Win10_20H2_v2_English_x64.iso -novirtio`
 
-5. Have your serial key ready to install Windows and if it can't see the virtual drive you specified with -image just load the drivers from the virtio ISO you also passed through.
+* For veterans, an example including the GPU and all USB controllers thus devices from VM first boot and on a new on the fly host bridge interface:
+     `qemu-img create -f raw /tmp/win.qcow2 50G`
+     `~/vfio/main -mem 12G -image /tmp/win.qcow2 -imageformat qcow2 -bridge tap0,br0,eth0 -pci 'NVIDIA|USB' -pinvcpus 0,12,1,13,2,14,3,15 -ignorevtcon -run`
 
-6. Once at your Windows VM's desktop, Install VirtIO so features like networking can kick in. Also install the video drivers for your card (Such as Nvidia), and any others you might need.
+5. Eventually windows will ask you to partition disks, if you're using VIRTIO (default) then you'll need to install the storage driver here before it'll see its disk.
+   If you used `-novirtio` there should be no issue continuing over classic IDE.
 
-7. Shut the VM down and try again without the ISOs and try using -pci to pass through some devices from the host (and optional -usb arguments if you aren't already passing the entire pci usb controller too)
+6. Once at the VM's desktop:
 
-## Examples
+* If you passed your GPU in from the beginning you're set, go ahead and install the official drivers for your card, do your updates and grab Steam or something.
 
-Note: I've omitted `-run` from these so they remain a dry-run.
+* If you haven't passed your card in yet, you can shutdown the VM and pass it in now. As a Plan B for Win guests you can do your Windows Updates so it knows to grab the driver and initialize the card. In case something else goes wrong.
+
+* It's worth going through Device Manager for any missing drivers. If you used virtio the iso will likely take care of them shortly if you don't click in and specify.
+
+### Passthrough gotchas
+
+1. If you're on a NVIDIA card including 2000,3000 and 4000 generations but are experiencing a blank screen or monitors just going into standby at VM boot, ensure you have isolated correctly, or if you already know your GPU isn't isolated, consider using a patched VBIOS file so the guest can just reinitialize the card itself.
+
+2. If your guest has the NVIDIA driver installed, you may find your screen starts black (And you miss the TianoCore boot process)
+but eventually gets a video signal once the guest reaches the login screen and the NVIDIA driver kicks in to resuscitate the card itself.
+
+
+### Performance woes?
+
+For best VM performance in any scenario:
+
+1. If you're virtualizing Windows, you can pass `-hyperv` to enable some HyperV enlightenments courtesy of QEMU.
+
+2. Consider hugepages (`-hugepages`) with your `-memory` argument. If your host memory is too fragmented for them to allocate on the fly, consider using `hugepagesz=1G` and `hugepages=12` in your kernel boot arguments; replacing '12' with the number of GB you wish to reserve for your VM. Don't forget to specify all of it with `-m xG -hugepages` when starting your VM.
+
+3. If you opted out of virtio devices with -novirtio and this isn't just a testbed; consider installing the drivers and using virtio devices. The virtual network interface alone is capable of 10Gbps which likely isn't your LAN speed, but means the host<>guest communication will be as fast as the CPU can deliver. This could be useful things such as reading a Steam library from the host over NFS, fast host to guest network shares in general and other cases for example if somebody wanted to use projects such as Steam's Streaming option or software such as Parsec, both of which would love a large low latency pipe to speak through.
+
+
+4. Pinning the vcpus of your guest to cpu threads of your host. QEMU spawns a child vcpu thread for each cpu you give it. They act as the actual "cpu" threads of your guest OS. You can check `-cputhreads` and use -pinvcpus to pin host cores to your guest. Pinning QEMU vcpu threads avoids it getting thrown about at the mercy of your host scheduler and can help significantly, especially on single GPU scenarios where your host load is negligible.
+
+
+5. Isolating the cores on the host that you pinned the guest to. I use the below to squeeze every last drop of low latency responsiveness on my VM:
+
+* isolcpus= thread,range,to-isolate  # Tell the kernel to not schedule work onto these, as they will be the ones we pin QEMU to
+* nohz_full=thread,range,to-isolate  # Tell the kernel to NOT send timer ticks to these cores, their only job will be QEMU so no need to check in. "Adaptive Ticks"
+* rcu_nocbs=thread,range,to-isolate  # Tell the kernel to handle RCU callbacks for these on any other CPU but themselves.
+* irqaffinity=remaining,host,threads # Use these remaining host cores to handle all host IRQ/RCU
+* rcu_nocb_poll                      # Enforce the above by polling only ever so often rather than having cores handle it themselves
+* systemd.unified_cgroup_hierarchy=0 # Enables systemd v1 cgroups
+
+6. Passing in a real disk such as using the -pci argument with a full NVME controller to give your guest a raw NVME of its own to use (Assuming somebody has a free M.2 slot and NVME to put into it) will always perform much better than any QEMU disk method, even though this script creates an iothread for the guest, you can't go wrong with raw NVME passthrough. The next closest contender would be a raw .img for the guest on a lightweight FS suchas ext4, with a goal of minimizing overhead, or just raw disk/partition access *via* a virtio disk.
+
+## Script usage examples
+
+Note: `-run` is omitted for obvious reasons.
+
+
 
 If you aren't ready to do any passthrough and just want to start the VM in a regular window (Installation, Drivers, etc.):
-  `./main -image /root/windows.img,format=raw -cdrom /root/Win10Latest.iso`
+  `./main -image /root/windows.img -imageformat raw -iso /tmp/Installer.iso`
 
 If a host has been booted with isolated cores you can tell the script to pin the guest to those only:
-  `./main -image /root/windows.img,format=raw -pinvcpus 0,1,2,3,4,5`
+  `./main -image /root/windows.img -imageformat raw -pinvcpus 0,1,2,3,4,5`
   
-  This example starts the VM with only host threads 0 to 5 (The first 3 cores on a multi-threaded host)
-  Very useful if a VM experiences stuttering from host load.
+  This example starts the VM with only host threads 0 to 5 (The first 3 cores on some multi-threaded hosts, check -cputhreads to see your true host thread to core topology)
+  Useful if a VM experiences stuttering from host load.
 
 An example run with passthrough could look like:
   `./main -image /dev/zvol/poolName/windows,format=raw -bridge tap0,br0,eth0 -usb 'SteelSeries|Audio-Technica|Holtek|Xbox' -pci 'NVIDIA'`
   
   This example would (if seen) pass all regex-matching USB and PCI devices and rebind the PCI devices if applicable.
-It would also provision network bridge br0 and attach tap0 to the bridge with your host interface. Then give tap0 to the VM.
+  It would also provision network bridge br0 and attach tap0 to the bridge with your host interface. Then give tap0 to the VM.
+
+An advanced example giving a guest 8G of memory and booting the host's kernel with arguments to boot from the first partition of a provided virtual disk.
+Includes an initramfs for the ext4 driver, which will be needed to read the ext4 rootfs partition of the virtua disk provided.
+Also doesn't use VirtIO becuase nor the kernel or initramfs have the virtio_scsi driver as a built-in.
+  `./main -m 8G -kernel /boot/vmlinuz-linux -append 'root=/dev/sda1 rw ' -initramfs /boot/initramfs-linux.img -image /zfstmp/kernelbuild/test.ext4.qcow2 -imageformat qcow2 -novirtio -run`
