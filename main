@@ -128,6 +128,11 @@ function printHelp {
   printer "    (Setting this also shapes the guest CPU topology to match.)"
   printer "    If you've configured core isolation on the host, this is the argument for you!\n"
 
+  printer "  ${colors[cyan]}-portforward tcp:2222:22 -portforward tcp:33389,3389"
+  printer "    A comma separated protocol, hostport and guestport for portforwarding."
+  printer "    Can be specified multiple times."
+  printer "    Only applicable when not using a bridge (The default User-mode networking).\n"
+
   printer "  ${colors[cyan]}-quiet/-q/-silence/-s"
   printer "    Try to be quiet, only print if we have an error.\n"
 
@@ -713,6 +718,13 @@ do
       vcpuThreads="$2"
       shift
     ;;
+    -portforward)
+      protocol="$(cut -f1 -d',' <<<  $2)"
+      hostPort="$(cut -f2 -d',' <<<  $2)"
+      guestPort="$(cut -f3 -d',' <<< $2)"
+      portForwarding+=",hostfwd=${protocol}::${hostPort}-:${guestPort}"
+      shift
+    ;;
     -quiet|-q|-silence|-s)
       quiet=1 # The printer function looks for this
     ;;
@@ -1090,7 +1102,7 @@ then
   networkArgs="-nic none"
   printer "${colors[green]}-nonet\t\tspecified, there will be no virtual network for the VM this run."
 else
-  networkArgs+=" -netdev user,id=vmnet" # NAT
+  networkArgs+=" -netdev user,id=vmnet${portForwarding}" # NAT
   printer "${colors[yellow]}-bridge/-nonet\tnot specified, VM will be given a NAT adapter\n\t\twith a random mac suffix (guest to host) this run.\n\t\tOK for most applications."
 fi
 
