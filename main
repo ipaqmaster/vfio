@@ -415,7 +415,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   [ -n "$expectLaunchIssue" ] && ! isDry && return 0 # No action if issue present
 
   function gpuLockHandler {
-    processesUsingGpu="$(fuser /dev/dri/by-path/pci-${fullBuspath}* 2>/dev/null)"
+    processesUsingGpu="$(sudo fuser /dev/dri/by-path/pci-${fullBuspath}* 2>/dev/null)"
 
     if [ -n "$processesUsingGpu" ]
     then
