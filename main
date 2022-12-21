@@ -128,8 +128,8 @@ function printHelp {
   printer "    (Setting this also shapes the guest CPU topology to match.)"
   printer "    If you've configured core isolation on the host, this is the argument for you!\n"
 
-  printer "  ${colors[cyan]}-portforward tcp:2222:22 -portforward tcp:33389,3389"
-  printer "    A comma separated protocol, hostport and guestport for portforwarding."
+  printer "  ${colors[cyan]}-portforward tcp:2222:22 -portforward tcp:33389:3389"
+  printer "    A colon:separated argument with a protocol, host port and destination guest port for guest portforwarding."
   printer "    Can be specified multiple times."
   printer "    Only applicable when not using a bridge (The default User-mode networking).\n"
 
@@ -791,9 +791,9 @@ do
       shift
     ;;
     -portforward)
-      protocol="$(cut -f1 -d',' <<<  $2)"
-      hostPort="$(cut -f2 -d',' <<<  $2)"
-      guestPort="$(cut -f3 -d',' <<< $2)"
+      protocol="$(cut -f1 -d':' <<<  $2)"
+      hostPort="$(cut -f2 -d':' <<<  $2)"
+      guestPort="$(cut -f3 -d':' <<< $2)"
       portForwarding+=",hostfwd=${protocol}::${hostPort}-:${guestPort}"
       shift
     ;;

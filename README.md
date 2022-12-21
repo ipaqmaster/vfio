@@ -213,8 +213,8 @@ This example would catch any:
    The taskset argument will take the threads you give it and only lets the VM execute on those threads. It also creates only that many threads on the VM. (6 and 4 in the examples respectively)
    This can significantly reduce latency if the guestis having trouble, even if you haven't configured any host pinning.
 
-`-portforward tcp:2222:22` + `-portforward tcp:33389,3389`
-    A comma separated argument taking a comma delimited argument in the format of protocol,hostport,guestport for guest portforwarding.
+`-portforward tcp:2222:22` + `-portforward tcp:33389:3389`
+    A flag accepting a colon delimited argument in the format of protocol,hostport,guestport for guest portforwarding.
     Can be specified multiple times.
     Only applicable with default user-mode NAT networking (Pointless when bridging)
 
