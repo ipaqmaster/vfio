@@ -527,7 +527,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
 
     if [[ $@ == *"unbind"* ]] && isDry
     then
-      printer "    [DRY]  ${colors[green]}Not unbinding it."
+      printer "    [DRY]  ${colors[green]}Leaving device alone."
     elif [[ $@ == *"unbind"* ]] && ! isDry
     then
       if isGpu "$fullBuspath"
@@ -562,7 +562,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
 
     elif [[ $@ == *"vfiobind"* ]] && isDry
     then
-      printer "    [DRY]  ${colors[green]}Not binding the device."
+      :
       echo
     elif [[ $@ == *"restorebind"* ]] && ! isDry
     then
