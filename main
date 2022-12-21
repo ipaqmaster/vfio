@@ -30,7 +30,7 @@ for dependency in chrt dhclient dhclient ip qemu-system-x86_64 taskset tr openss
 do
   which $dependency >/dev/null 2>&1 || missing="$missing $dependency "
 done
-if [[ ! -z "$missing" ]]
+if [[ -n "$missing" ]]
 then
   echo -ne "Couldn't find these programs:$missing\nPlease install the relevant packages or check your \$PATH."
   exit 1
@@ -173,14 +173,14 @@ function permissionsManager { # chown's things before qemu starts, but also trie
 function isDry { if [ $DRY -eq 1 ] ; then return 0 ; else return 1 ; fi ; }
 
  # Read numeric value from meminfo
-function readMeminfo   { if [ ! -z "$1" ]; then grep -m1 "$1" /proc/meminfo | grep -Eo '[0-9]+'; fi ; }
-function readHugeInfo  { if [ ! -z "$1" ] && [ ! -z "$2" ]; then cat /sys/kernel/mm/hugepages/hugepages-${1}kB/${2}; fi ; }
-function writeHugeInfo { if [ ! -z "$1" ] && [ ! -z "$2" ]; then sudo tee /sys/kernel/mm/hugepages/hugepages-${1}kB/${2} > /dev/null; fi ; }
+function readMeminfo   { if [ -n "$1" ]; then grep -m1 "$1" /proc/meminfo | grep -Eo '[0-9]+'; fi ; }
+function readHugeInfo  { if [ -n "$1" ] && [ -n "$2" ]; then cat /sys/kernel/mm/hugepages/hugepages-${1}kB/${2}; fi ; }
+function writeHugeInfo { if [ -n "$1" ] && [ -n "$2" ]; then sudo tee /sys/kernel/mm/hugepages/hugepages-${1}kB/${2} > /dev/null; fi ; }
 
 function isGpu { if grep -o '\[VGA controller\]' <<<$(lspci -vnnn -s "$1") > /dev/null 2>&1 ; then return 0 ; else return 1 ; fi }
 
 function errorBindingTimeout {
-  if [ ! -z "$1" ]; then attemptedTask=$1 ; else attemptedTask="bind or unbind" ; fi
+  if [ -n "$1" ]; then attemptedTask=$1 ; else attemptedTask="bind or unbind" ; fi
   printer "${colors[red]}    The device  $fullBuspath ${colors[red]}// $vendorClass ${colors[red]} Was unable to $attemptedTask after 5 seconds, is something else using it?" "fault"
   printer "${colors[red]}    (E.g This will happen to a GPU in use by X)" "fault"
   printer "${colors[red]}    Giving up." "fault"
@@ -194,17 +194,17 @@ function do_cleanup {
   if ! isDry
   then
       # Undo bridge if used
-    if [[ ! -z "$bridgeArgs" ]]; then bridger stop $bridgeArgs ; fi
+    if [[ -n "$bridgeArgs" ]]; then bridger stop $bridgeArgs ; fi
 
       # Rebind the console and PCI devices if they were rebound
-    if [ ! -z "$pciREGEX" ]
+    if [ -n "$pciREGEX" ]
     then
       enumeratePCIs restorebind
-      if [ ! -z "$vtconUnboundThisSession" ]; then vtconBindings bind; fi 
+      if [ -n "$vtconUnboundThisSession" ]; then vtconBindings bind; fi 
       if  [ "$dm" == "seen" ]; then echo "Attempting to restore display-manager..." ; sudo systemctl start display-manager ; fi # Start DM if seen before run.
     fi
 
-    if [ ! -z "$HUGEPAGES" ] && [ ! -z "$hugepagesSelfAllocated" ] # Clean up hugepages
+    if [ -n "$HUGEPAGES" ] && [ -n "$hugepagesSelfAllocated" ] # Clean up hugepages
     then
       echo 0 | writeHugeInfo ${hugepageSizeKB} nr_hugepages # pack up
     fi
@@ -266,7 +266,7 @@ function bridger {
         brTapAlreadyExists=1
       fi
 
-    elif [ ! -z "$int" ]
+    elif [ -n "$int" ]
     then
       if [ ! -d /sys/class/net/$int ]      ; then printer "${colors[red]}interface $int specified but not found, not bridging." "fault"                ; brStartFault=1 ; exit 1 ; else intExists=1 ; fi
       if [ -L /sys/class/net/$int/master ] ; then printer "${colors[red]}interface $int specified but already part of a bridge, not changing." "fault" ; brStartFault=1 ; exit 1 ; fi
@@ -279,11 +279,11 @@ function bridger {
     # Otherwise try to steal last 3 octets from the bridge interface mac instead.
 
   # Build VM's mac address from above
-  if [ ! -z "$int" ]
+  if [ -n "$int" ]
   then
       # From specified int
     tapMAC="$(buildGuestMac $(etherGrep $int))"
-  elif [ ! -z "$br" ]
+  elif [ -n "$br" ]
   then
       # From specified bridge
     tapMAC="$(buildGuestMac $(etherGrep $br))"
@@ -298,7 +298,7 @@ function bridger {
       then
         printer "$br exists and is up, will attach $tap to that."
         bridgePreexists=1
-      elif ! grep -qs -E '^up$' /sys/class/net/$br/operstate && [ ! -z "$int" ]
+      elif ! grep -qs -E '^up$' /sys/class/net/$br/operstate && [ -n "$int" ]
       then
         printer "${colors[green]}bridge $br not found while host int specified, will create $br for this session and attach $int + $tap to it."
         bridgePreexists=0
@@ -343,7 +343,7 @@ function bridger {
         fi
       done
 
-      if [ $bridgePreexists -eq 0 ] && [ ! -z $int ]
+      if [ $bridgePreexists -eq 0 ] && [ -n "$int" ]
       then
         echo "Running dhclient on $br..."
         sudo dhclient -v $br 2>&1|grep '^DHCPACK'
@@ -398,7 +398,7 @@ function enumerateUSBs { # Generate usb related arguments for the guest.
        Name="$(cut -d' ' -f7- <<<"$USBDevice")"
     busPath="$(cut -d' ' -f2 <<<"$USBDevice")"
  devicePath="$(cut -d' ' -f4 <<<"$USBDevice" | grep -Eo '[0-9]+')"
-    if [[ ! -z "$vendor" ]] && [[ ! -z "$product" ]]
+    if [[ -n "$vendor" ]] && [[ -n "$product" ]]
     then
       newUsbArg="-device usb-host,vendorid=0x$vendor,productid=0x$product"
         usbArgs+=" $newUsbArg"
@@ -532,11 +532,8 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     then
       if isGpu "$fullBuspath"
       then
-        echo "DEBUG: This is a GPU"
-        echo "DEBUG: driver is $driver"
         if [ -n "$driver" ] && [ ! "$driver" == "vfio-pci" ]
         then
-          echo "DEBUG: Trying grace"
           tryGracefulGpuUnbind
         fi
       else
@@ -585,7 +582,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     then
       guestGetsGPU=1
       pciArgs+=" -device vfio-pci,x-vga=on,multifunction=on,host=$fullBuspath,id=hostdev$inc"
-      if [ ! -z "$romfilePath" ] && [ -f "$romfilePath" ]
+      if [ -n "$romfilePath" ] && [ -f "$romfilePath" ]
       then
         printer "${colors[green]}    Romfile will be passed to the GPU on VM start.\t"
         pciArgs+=",romfile=$romfilePath" #Tack romfile on the end if specified
@@ -740,7 +737,7 @@ do
       shift
     ;;
     -imageformat|-format)
-      if [ ! -z "$latestDisk" ]
+      if [ -n "$latestDisk" ]
       then
         disks[$latestDisk]="$2"
         else
@@ -870,7 +867,7 @@ hostThreads=$(grep -Pom1 'siblings.*\ \K([0-9]+)$' /proc/cpuinfo )
 
 if [ -z "$vcpuThreads" ] # vcpu pinning
 then
-  guestCores=$hostCores ; if [ ! -z $hostIsHT ]; then guestThreads=2; else guestThreads=1; fi
+  guestCores=$hostCores ; if [ -n "$hostIsHT" ]; then guestThreads=2; else guestThreads=1; fi
   printer "${colors[yellow]}-pinvcpus\tnot specified, guest will execute on full host CPU without any pinning:\t${colors[none]}($hostCores) with ($hostThreads) threads."
 else
   if grep -qE '^([0-9]|,)+$' <<< $vcpuThreads
@@ -891,7 +888,7 @@ fi
 if [ -z "$memoryArgs" ]
 then
   totalHostMemoryKB="$(readMeminfo MemTotal)"
-  if [ ! -z "$totalHostMemoryKB" ]
+  if [ -n "$totalHostMemoryKB" ]
   then
     guestmemoryMB="$((totalHostMemoryKB / 1024 / 2))"
     printer "${colors[yellow]}-memory\t\tnot specified, will use half host total:\t${colors[none]}${guestmemoryMB} MB"
@@ -953,7 +950,7 @@ then
 fi
 
   # Eval Hugepages
-if [  "$HUGEPAGES" == "1" ]
+if [ -n "$HUGEPAGES" ]
 then
   if [ -z "$hugePath" ]
   then
@@ -984,6 +981,7 @@ then
     ((++expectLaunchIssue))
     exit 1
   fi
+
   hugepageSize="$(grep $hugePath /proc/mounts | grep -Po '(?<=pagesize=).+[A-Z]' | tail -n1)"
   if [[ "$hugepageSize" =~ 'M' ]]
   then
@@ -999,8 +997,10 @@ then
 
   pagesRequired="$((guestmemoryMB / hugepageSizeMB))"
   printer "${colors[green]}\t\t${pagesRequired} pages will be deployed for ${guestmemoryMB}MB of VM memory."
+
   if ! isDry
   then
+    permissionsManager takeown $hugePath
     if [ $(readHugeInfo ${hugepageSizeKB} free_hugepages) -ge $pagesRequired ]
     then
       printer "\t\t${colors[green]}Hugepages already preallocated with enough free for guest, using those."
@@ -1022,7 +1022,6 @@ then
         printer "\t${colors[yellow]}(${colors[none]}${hugepagesFree} ${colors[yellow]}pages free out of ${pagesRequired}${colors[yellow]} requested. With that the highest value achieved right now is: -mem $((hugepagesFree * hugepageSizeMB))${colors[yellow]})\n"
         ((++expectLaunchIssue))
       fi
-      permissionsManager takeown $hugePath
       printer "\n\n${color[green]}Hugepages ready."
     fi
   fi
@@ -1033,7 +1032,7 @@ fi
 machineArgs="-machine q35,accel=kvm,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
 cpuArgs="-cpu host,kvm=on,topoext=on"
 
-if [ ! -z "$hyperv" ]
+if [ -n "$hyperv" ]
 then
   printer "${colors[green]}-hyperv\t\tspecified, HyperV Enlightenments will be enabled for this run."
   cpuArgs+=",hv-frequencies,hv-relaxed,hv-reset,hv-runtime,hv-spinlocks=0x1fff,hv-stimer,hv-synic,hv-time,hv-vapic,hv-vpindex"
@@ -1046,7 +1045,7 @@ coreArgs+=" -drive if=pflash,format=raw,unit=0,readonly=on,file=$biosPath"
 coreArgs+=" -serial mon:stdio" # Add a qemu serial device
 coreArgs+=" -nodefaults"       # Don't use any default devices
 
-if [ ! -z "$hostAudio" ]
+if [ -n "$hostAudio" ]
 then
   printer "${colors[green]}-hostaudio\tspecified, VM will use a pulseaudio backend to the host for audio output this run."
   soundArgs="-audiodev pa,id=snd0"
@@ -1072,7 +1071,7 @@ then
   fi
 fi
 
-if [[ ! -z "${!disks[@]}" ]]
+if [[ -n "${!disks[@]}" ]]
 then
   printer "${colors[green]}-image(s)\tspecified, using virtual disk(s) this run:"
 else
@@ -1082,7 +1081,7 @@ fi
 for disk in ${!disks[@]}
 do
   ((++ioCounter))
-  if [ ! -z "${disks[$disk]}" ]; then diskFormat=",format=${disks[$disk]}"; else unset diskFormat ; fi
+  if [ -n "${disks[$disk]}" ]; then diskFormat=",format=${disks[$disk]}"; else unset diskFormat ; fi
   printer "\t\t${ioCounter}\n\t\t  ${colors[blue]}Path:\t\t${colors[none]}${disk}\n\t\t${colors[blue]}  Format:\t${colors[none]}${disks[$disk]}"
   checkFileExists "$disk"
   permissionsManager takeown ${disk}
@@ -1095,7 +1094,7 @@ do
   fi
 done
 
-if [ ! -z "$isos" ]
+if [ -n "$isos" ]
 then
   printer "${colors[green]}-iso(s)\tattached:"
   for iso in ${isos[@]}
@@ -1108,7 +1107,7 @@ then
 fi
 
 
-if [ ! -z "$romfilePath" ]
+if [ -n "$romfilePath" ]
 then
   printer "${colors[green]}-romfile\tspecified, if a GPU is detected in the -pci arguments this romfile will be used."
   printer "\t\t$romfilePath"
@@ -1117,7 +1116,7 @@ then
   sleep 3
 fi
 
-if [ ! -z "$lookingglass" ]
+if [ -n "$lookingglass" ]
 then
   spicePort=5900
   printer "${colors[green]}-lookingglass\tspecified, we'll start qemu with a spice server and shared memory for it."
@@ -1146,20 +1145,20 @@ then
   lgArgs+=" -chardev spicevmc,id=charredir1,name=usbredir"
 fi
 
-if [ ! -z "$extras" ]
+if [ -n "$extras" ]
 then
   printer "${colors[green]}-extras\t\tspecified, we'll start qemu with these extra arguments:${colors[none]}\t$extras"
   echo '' # spacer
 fi
 
 
-if [[ ! -z "$bridgeArgs" ]];
+if [[ -n "$bridgeArgs" ]];
 then
   # Make the bridge
   bridger start $bridgeArgs
   networkArgs="-netdev tap,id=vmnet,ifname=$tap,script=no,downscript=no" # Bridge
   printer "${colors[green]}-bridge\t\tspecified, VM will be bridged to the host with a tap adapter."
-elif [ ! -z "$noNet" ]
+elif [ -n "$noNet" ]
 then
   networkArgs="-nic none"
   printer "${colors[green]}-nonet\t\tspecified, there will be no virtual network for the VM this run."
@@ -1179,11 +1178,11 @@ fi
 
 
   # Remove any leading/trailing pipes from the regex just in case.
-if [ ! -z "$usbREGEX" ]; then usbREGEX=$(regexCleanup "$usbREGEX") ; fi
-if [ ! -z "$pciREGEX" ]; then pciREGEX=$(regexCleanup "$pciREGEX") ; fi
+if [ -n "$usbREGEX" ]; then usbREGEX=$(regexCleanup "$usbREGEX") ; fi
+if [ -n "$pciREGEX" ]; then pciREGEX=$(regexCleanup "$pciREGEX") ; fi
 
-if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
-if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; fi
+if [ -n "$usbREGEX" ]; then enumerateUSBs ; fi
+if [ -n "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; fi
 
 if [ -n "${killedCmdlines}" ]
 then
@@ -1203,11 +1202,11 @@ fi
   # 1. The guest gets no PCI GPU
   # 2. $DISPLAY is set.
 
-if [ -z "$guestGetsGPU" ] && [[ ! -z "$DISPLAY" ]]
+if [ -z "$guestGetsGPU" ] && [[ -n "$DISPLAY" ]]
 then
   printer  "${colors[green]}Guest has no GPU but \$DISPLAY variable is set [$DISPLAY]. Giving it a virtual screen for this run."
   coreArgs+=" -display sdl -vga ${deviceTypes[vga]}" # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
-elif [ ! -z "$guestGetsGPU" ]
+elif [ -n "$guestGetsGPU" ]
 then
   printer  "${colors[green]}Guest will get a PCI gpu, no virtual monitor will be attached."
   coreArgs+=" -nographic -vga none"
@@ -1241,12 +1240,12 @@ then
   unset quiet
   printer "Here are the completed args from this DRY run:"
   printer "Core:\n${colors[blue]} $coreArgs $hugeArgs"
-  if [ ! -z "$networkArgs" ]; then printer "Net :\n${colors[blue]}${networkArgs}"                   ; fi
-  if [ ! -z "$usbArgs" ]    ; then printer "USB :\n${colors[blue]}${usbArgs}"                       ; fi
-  if [ ! -z "$pciArgs" ]    ; then printer "PCI :\n${colors[blue]}${pciArgs}"                       ; fi
-  if [ ! -z "$lgArgs" ]     ; then printer "Looking Glass:\n${colors[blue]}${lgArgs}"               ; fi
-  if [ ! -z "$kernelArgs" ] ; then printer "Direct Kernel Boot Args:\n${colors[blue]}${kernelArgs}" ; fi
-  if [ ! -z "$extras" ]     ; then printer "Extras:\n${colors[blue]}${extras}"                      ; fi
+  if [ -n "$networkArgs" ]; then printer "Net :\n${colors[blue]}${networkArgs}"                   ; fi
+  if [ -n "$usbArgs" ]    ; then printer "USB :\n${colors[blue]}${usbArgs}"                       ; fi
+  if [ -n "$pciArgs" ]    ; then printer "PCI :\n${colors[blue]}${pciArgs}"                       ; fi
+  if [ -n "$lgArgs" ]     ; then printer "Looking Glass:\n${colors[blue]}${lgArgs}"               ; fi
+  if [ -n "$kernelArgs" ] ; then printer "Direct Kernel Boot Args:\n${colors[blue]}${kernelArgs}" ; fi
+  if [ -n "$extras" ]     ; then printer "Extras:\n${colors[blue]}${extras}"                      ; fi
   printer "\nRun the script with the same arguments again and include ${colors[red]}-run${colors[none]} to actually pass these to qemu-system-x86_64\n"
   exit 0
 else
@@ -1257,7 +1256,7 @@ else
   qemuPid=$!
   echo qemu pid is $qemuPid
   sudo chrt -p 1 -p $qemuPid >/dev/null                  # Set qemus threads to have high priority
-  if [ ! -z $vcpuPinningAfterQemuStart ]; then pinVcpus $qemuPid & sleep 1 ; fi
+  if [ -n "$vcpuPinningAfterQemuStart" ]; then pinVcpus $qemuPid & sleep 1 ; fi
   fg # Bring qemu console into foreground
 fi
 
