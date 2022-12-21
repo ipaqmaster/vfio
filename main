@@ -179,7 +179,7 @@ function writeHugeInfo { if [ ! -z "$1" ] && [ ! -z "$2" ]; then sudo tee /sys/k
 
 function isGpu { if grep -o '\[VGA controller\]' <<<$(lspci -vnnn -s "$1") > /dev/null 2>&1 ; then return 0 ; else return 1 ; fi }
 
-function bindingTimeout {
+function errorBindingTimeout {
   if [ ! -z "$1" ]; then attemptedTask=$1 ; else attemptedTask="bind or unbind" ; fi
   printer "${colors[red]}    The device  $fullBuspath ${colors[red]}// $vendorClass ${colors[red]} Was unable to $attemptedTask after 5 seconds, is something else using it?" "fault"
   printer "${colors[red]}    (E.g This will happen to a GPU in use by X)" "fault"
@@ -413,20 +413,72 @@ function enumerateUSBs { # Generate usb related arguments for the guest.
 
 function enumeratePCIs { # This makes arguments and also unbinds from drivers. Optional vfio-pci rebinding.
   [ -n "$expectLaunchIssue" ] && ! isDry && return 0 # No action if issue present
-  function gpuDetectedAndInUse {
-    printer "${colors[yellow]}    Video device $1 is bound to a driver which isn't vfio-pci and could be in use by the DM, framebuffer or otherwise." "fault"
-    printer "${colors[yellow]}    For this reason the script will now attempt to stop the display-manager service and unbind" "fault"
-    printer "${colors[yellow]}    the efi framebuffer instead of risking a driver unbind deadlock in waiting for X to quit." "fault"
-    printer "${colors[yellow]}    If your X server and virtual consoles don't use this card you can unbind it from its driver manually before running this script." "fault"
-    if systemctl is-active display-manager >/dev/null && ! isDry
+
+  function gpuLockHandler {
+    processesUsingGpu="$(fuser /dev/dri/by-path/pci-${fullBuspath}* 2>/dev/null)"
+
+    if [ -n "$processesUsingGpu" ]
     then
-      printer "${colors[yellow]}    Stopping display-manager and unbinding console drivers in 5 seconds..." "fault"; sleep 5
-      sudo systemctl stop display-manager ; export dm="seen"
+      processNamesUsingGpu="$(ps $processesUsingGpu)"
+      if [ "$processNamesUsingGpu" = *"Xorg"* ] 
+      then
+        printer "${colors[yellow]}    It appears Xorg has latched onto this GPU, cannot unbind from driver and give to guest without killing Xorg." "fault"
+        if [ -z "$KILLX" ]
+        then
+          printer "${colors[yellow]}    Specify -killX to allow killing your graphical session for the guest to take a card." "fault"
+          printer "${colors[yellow]}    If you're on a dual GPU setup, consider configuring Xorg to ignore your second GPU. (See README.md)" "fault"
+        fi
+      else
+        printer "${colors[yellow]}    Some processes are latched onto this card, but NOT Xorg. They must be killed to unbind this card." "fault"
+        printer "${colors[yellow]}    Xorg can be left alive and these processes relaunched:" "fault"
+        for pid in ${processesUsingGpu} # Keep track of what we killed to try and restore after stealing a GPU.
+        do
+          if grep "${pid}" <<< $(ps -u $USER)
+          then
+            killedCmdlines+=("$(tr -d '\0' </proc/${pid}/cmdline)") 2>/dev/null
+          fi
+        done
+        kill ${processesUsingGpu}
+      fi
+        printer "$processNamesUsingGpu" # Share the problematic process list with the user
     else
-      printer "${colors[yellow]}    Could not find a service for display-manager. Confused but trying to continue anyway." "fault"
+        printer "${colors[green]}    This GPU is free." "fault"
     fi
-    vtconBindings unbind
+    if [ -n "$KILLX" ]
+    then
+      if systemctl is-active display-manager >/dev/null && ! isDry
+      then
+        printer "${colors[yellow]}    Stopping display-manager and unbinding console drivers in 5 seconds..." "fault"; sleep 5
+        sudo systemctl stop display-manager ; export dm="seen"
+      else
+        printer "${colors[yellow]}    Could not find a service for display-manager. Confused but trying to continue anyway." "fault"
+      fi
+      vtconBindings unbind
+    fi
+
   }
+
+  function unbindWithTimeout { echo "$fullBuspath" | sudo timeout --signal 9 5 tee /sys/bus/pci/devices/$fullBuspath/driver/unbind >/dev/null ;}
+
+  function tryGracefulGpuUnbind {
+    gpuLockHandler
+    printer "${colors[green]}    Unbinding GPU from:\t${colors[none]}${driver}..."
+    unbindWithTimeout
+
+    if [ $? -eq 137 ]
+    then
+      if [ -n "$KILLX" ]
+      then
+        printer "${colors[green]}    ${colors[red]}Failed... Trying again with X killed..."
+        gpuLockHandler killx
+        unbindWithTimeout
+        if [ $? -eq 137 ]; then errorBindingTimeout "Gpu unbind after killing X" ; exit 1; fi
+      else
+        errorBindingTimeout "Gpu unbind without killing X"
+      fi
+
+    fi
+}
 
   printer "PCI:"
   declare -A -g deviceDrivers # Array for tracking devices and their driver.
@@ -473,48 +525,51 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
 
     driver="${deviceDrivers["$vendorClass"]}"
 
-    if [[ $@ == *"unbind"* ]] && ! isDry
-    then
-      if ! isDry && isGpu $fullBuspath
-      then
-        if [ ! -z "$driver" ] && [ ! "$driver" == "vfio-pci" ] ; then gpuDetectedAndInUse "$busPath[$vendorClass]" ; fi
-      fi
-      if [ ! -z "$driver" ] && [ "$driver" != "vfio-pci" ]
-      then
-        printer "${colors[green]}    Unbinding from:\t${colors[none]}$driver"
-        echo "$fullBuspath" | sudo timeout --signal 9 5 tee /sys/bus/pci/devices/$fullBuspath/driver/unbind >/dev/null # Try an unbind but give up after 5 seconds with a kill-9
-        if [ $? -eq 137 ]; then bindingTimeout unbind ; exit 1 ; fi
-
-      fi
-    elif [[ $@ == *"unbind"* ]] && isDry
+    if [[ $@ == *"unbind"* ]] && isDry
     then
       printer "    [DRY]  ${colors[green]}Not unbinding it."
+    elif [[ $@ == *"unbind"* ]] && ! isDry
+    then
+      if isGpu "$fullBuspath"
+      then
+        echo "DEBUG: This is a GPU"
+        echo "DEBUG: driver is $driver"
+        if [ -n "$driver" ] && [ ! "$driver" == "vfio-pci" ]
+        then
+          echo "DEBUG: Trying grace"
+          tryGracefulGpuUnbind
+        fi
+      else
+       unbindWithTimeout
+      fi
     fi
 
     if [[ $@ == *"vfiobind"* ]] && ! isDry
     then
-        if ! [ "$currentDriver" == "vfio-pci" ]
+        if [ "$currentDriver" != "vfio-pci" ]
         then
           printer "${colors[green]}    Adding ID and binding to:\t${colors[none]}vfio-pci"
           echo "0x$vendor 0x$class" | sudo timeout --signal 9 5 tee /sys/bus/pci/drivers/vfio-pci/new_id >/dev/null 2>&1
-          if [ $? -eq 137 ]; then bindingTimeout "bind via new_id" ; exit 1 ; fi
+          if [ $? -eq 137 ]; then errorBindingTimeout "bind via new_id" ; exit 1 ; fi
           echo "$fullBuspath" | sudo timeout --signal 9 5 tee /sys/bus/pci/drivers/vfio-pci/bind >/dev/null 2>&1   # Try and bind the PCI address for this device just in case ID already added and not automatically bound
-          if [ $? -eq 137 ]; then bindingTimeout bind ; exit 1 ; fi
+          if [ $? -eq 137 ]; then errorBindingTimeout bind ; exit 1 ; fi
         fi
-      while ! [ -c /dev/vfio/$iommuGroup ]
+
+      while ! [ -c /dev/vfio/$iommuGroup ] # Wait a moment for the device to initialize under vfio-pci.
       do
         sleep 1 && ((++iommuTimeout))
         if [ $iommuTimeout -gt 5 ]; then printer "${colors[red]}    Timed out waiting for bound device to appear under /dev/vfio" "fault" ; exit 1 ; fi
       done
       permissionsManager takeown /dev/vfio/${iommuGroup}
       echo 1 | sudo tee /sys/bus/pci/rescan >/dev/null
+
     elif [[ $@ == *"vfiobind"* ]] && isDry
     then
       printer "    [DRY]  ${colors[green]}Not binding the device."
       echo
     elif [[ $@ == *"restorebind"* ]] && ! isDry
     then
-      if ! [ -z "$driver" ] && [ "$driver" != "vfio-pci" ]
+      if [ -n "$driver" ] && [ "$driver" != "vfio-pci" ]
       then
         printer "${colors[green]}    Rebinding $vendorClass back to driver:\t${colors[none]}$driver"
         echo "0x$vendor 0x$class" | sudo tee /sys/bus/pci/drivers/vfio-pci/remove_id >/dev/null &2>&1
@@ -526,10 +581,9 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       fi
     fi
 
-
-    if isGpu $fullBuspath
+    if isGpu "${fullBuspath}" # Special condition for GPUs
     then
-      printer "${colors[green]}    This appears to be a GPU.\t" && guestGetsGPU=1
+      guestGetsGPU=1
       pciArgs+=" -device vfio-pci,x-vga=on,multifunction=on,host=$fullBuspath,id=hostdev$inc"
       if [ ! -z "$romfilePath" ] && [ -f "$romfilePath" ]
       then
@@ -711,6 +765,10 @@ do
       kernelPath=$2
       shift
     ;;
+    -killx)
+      KILLX=1
+      shift
+    ;;
     -looking-glass|-lookingglass|-lg)
       lookingglass="1"
     ;;
@@ -785,7 +843,7 @@ then
   printer "${colors[yellow]}-ignoreVtconn\tspecified, efi-framebuffer/vtcon bindings will be left alone."
   printer "\t\t${colors[yellow]}AMD cards don't mind vtcons; this argument is to workaround a recent"
   printer "\t\t${colors[yellow]}NULL pointer dereference bug in fbcon.c) on NVIDIA-powered hosts"
-  printer "\t\t${colors[red]}Follow the bug report here: https://bugzilla.kernel.org/show_bug.cgi?id=216475"
+  printer "\t\t${colors[yellow]}Follow the bug report here: https://bugzilla.kernel.org/show_bug.cgi?id=216475"
 fi
 
 declare -A deviceTypes
@@ -1126,6 +1184,18 @@ if [ ! -z "$pciREGEX" ]; then pciREGEX=$(regexCleanup "$pciREGEX") ; fi
 
 if [ ! -z "$usbREGEX" ]; then enumerateUSBs ; fi
 if [ ! -z "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; fi
+
+if [ -n "${killedCmdlines}" ]
+then
+  printer "${colors[blue]}Restoring desktop processes killed to unbind the card:"
+
+for process in ${!killedCmdlines[@]}
+do
+  eval "${killedCmdlines[${process}]} >/dev/null 2>&1 &"
+done
+
+
+fi
 
 
   # Must do this after enumerating a PCI regex as it checks for GPUs first.

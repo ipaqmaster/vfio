@@ -103,7 +103,7 @@ In general this script has been very useful in my tinkering even outside VFIO ga
 
 `-ignorevtcon` / `-ignoreframebuffer` / `-leavefb` / `-leaveframebuffer` / `leavevtcon`
     Intentionally leave the vtcon and efi-framebuffer bindings alone 
-    Primarily added to work around kernel bug 216475 (https://bugzilla.kernel.org/show_bug.cgi?id=216475)
+    Primarily added to [work around kernel bug 216475](https://bugzilla.kernel.org/show_bug.cgi?id=216475)
     Prevents restoring vtcon's at a cost of as many GPU swaps from host to guest as desired.
 
 `-image /dev/zvol/zpoolName/windows -imageformat raw`
@@ -274,11 +274,11 @@ If you've already isolated a GPU for the guest (Explicitly isolated from boot, o
 
 ### In depth installation steps for a Windows VM
 
-1. You *should* use virtio hardware with your VM, it performs better than the legacy-supporting virtual hardware and you can get the ISO to pass with your installer ISO here: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio
+1. You *should* use virtio hardware with your VM, it performs better than the legacy-supporting virtual hardware and [you can get the virtio driver disc ISO to pass with your installer ISO here](https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio): 
 
 *Don't want to use virtio drivers for your guest or can't fetch the ISO? You can launch this script with -novirtio to use legacy devices like e1000e for networking which should be compatible with most barebones OSes
 
-2. Get the latest Win ISO you wish to install from Microsoft's site: https://www.microsoft.com/en-au/software-download/
+2. [Get the latest Win ISO you wish to install from Microsoft's site here](https://www.microsoft.com/en-au/software-download/)
 
 3. Create storage for your VM; It has to live somewhere. Example commands below.
 
@@ -343,6 +343,65 @@ For best VM performance in any scenario:
 6. Passing in a real disk to your guest to boot from such as a dedicated NVME controller with the -pci argument will always perform much better than any QEMU disk method, even though this script creates an iothread per guest disk, you can't go wrong with raw NVME passthrough.
    The next closest contender would be a raw partition on the host passed as a virtio disk, or a raw.img file on a lightweight host FS such as ext4 (with a goal of minimizing overhead)
 
+## Saving your Display Manager from being killed to unbind the guest card (Xorg) / General guest GPU pre-prep
+
+Informing Xorg via xorg.conf (or a .d/file.conf) to ignore other GPUs on your system is a good way to keep your second GPU on the driver (So it can still be used for CUDA operations) while allowing it to be unbound from the driver on the fly for a guest to use without killing your host's graphical session. 
+
+Isolating the second card like this allows your second card to stick around for CUDA-powered computations on the host and if there's no other processes other than Xorg using your guest card, you can unbind it for vfio-pci usage at any time without hanging (Waiting for processes to exit)
+
+Naturally, this is only applicable in scenarios where you have a second GPU. Single GPU passthrough users only have the one card to draw to, which means X needs to be stopped before the guest can have that card. Sorry. However, if you aren't running anything graphically intensive, you could use XPRA on your host and run your programs through that. Then re-attach to it when you make it back to the host graphically. Or even better, you could attach to XPRA *from inside the guest* and continue accessing your host applications from inside the guest.
+
+### An Xorg.conf example to only use one GPU (On a system with more)
+
+This can be put right into /etc/X11/xorg.conf but be sure to replace any existing Device declarations you have so that X doesn't error. -- Some distros
+
+    Section "ServerFlags"
+        # Do not scan for GPUs
+      Option "AutoAddGPU" "0"
+      Option "AutoBindGPU"  "0"
+        # It's OK to scan and add peripherals however.
+      Option "AutoAddDevices" "1"
+      Option "AutoEnableDevices"  "1"
+    EndSection
+    
+    # Define the host GPU here, no others
+    Section "Device"
+        Identifier     "Device0"
+          # Pick the right driver for your host GPU vendor.
+        Driver         "nvidia"
+          # And the correct bus ID (lspci -D)
+        BusID          "PCI:1:0:0"
+          # Do not probe for others.
+        Option "ProbeAllGpus" "0" 
+    EndSection
+    
+### Checking what's using your GPU's at a glance.
+Here's a quick and dirty one-liner which this VFIO script also uses to check what processes are using a GPU. Just substitute the path with the PCI address of your guest-intended GPU:
+1. `xrandr --listproviders` will reveal how many GPUs it thinks it's allowed to use in your Graphical Session. **This honors your xorg.conf**.
+2. `ps $(fuser /dev/dri/by-path/pci-0000:03:00.0* 2>/dev/null)` will reveal exactly which processes are using a GPU no matter what. Any that aren't following your xorg.conf will be listed here too. The script uses this for killing when required. Don't forget to replace this example `pci-0000:03:00.0` with the PCI path of the GPU you wish to check.
+
+### Some processes that get in the way even with a perfectly isolating xorg.conf
+I've spent plenty of time going over every relevant flag to try and demystify why xorg.conf isolation is so inconsistent so this README.md can be a good VFIO general reference but in my experience even with a perfect gpu-isolating xorg.conf, some Window Managers still spawn processes which latch onto the card I just tried to isolate.
+
+I use Cinnamon and Xfce4. It turns out Cinnamon spawns `xdg-desktop-portal-gnome` (I assume nay Gnome-based WM will) and Xfce4 spawns `xdg-desktop-portal` both of which latch onto the second GPU despite being isolated in xorg.conf.
+
+This is really annoying, but is easily thwarted by simply kill/pkill'ing those processes.
+In the case of both Window Managers, I was able to kill those portal processes and my graphical session continued to function just fine. But also, my second GPU could be unbound and used for VFIO without killing my graphical session.
+
+Armed with this knowledge, the script now supports xorg.conf isolation and will try to unbind a card without killing X first, only resorting to killing it in a last resort scenario / flag.
+
+## Guest GPU "selective" isolation use-cases
+
+For general guest GPU pre-prep or if you're desperate to not kill your existing Xorg session; there's many ways to prepare, though the methods available drastically change depending on your use case.
+
+### Use case 1: Dedicated GPU for the guest which is a different model and driver than your host's GPU
+This is the best case scenario to deal with easiest scenario to deal with as you can simply [bind vfio-pci at boot time](https://wiki.archlinux.org/title/PCI_passthrough_via_OVMF#Binding_vfio-pci_via_device_ID) by adding `vfio-pci.ids=` to your host's kernel arguments. This will bind the guest card to vfio-pci immediately and to undo it you can either remove that kernel argument and reboot or manually unbind your gust GPU from vfio-pci and bind it back onto the vendor GPU driver.
+### Use case 2: Dedicated GPU for the guest, but you want to use it on the host when the guest isn't in use (e.g. Host Cuda while guest is powered down)
+As long as you aren't locking your guest's card into an Xorg session, you can let this vfio script dynamically unbind your guest card from the nvidia/radeon/amdgpu driver on the fly. Just make sure you aren't using the GPU elsewhere such as a CUDA operation or other gpu-accelerated CLI task.
+### Use case 3: The guest GPU and host GPU are identical [vendor:class] IDs
+This ends up being a similar case as #2, as you cannot target your guest's card using vfio-pci.ids because that will catch your host's GPU as well.
+You can use the same xorg.conf isolation method to tell X to only use your primary GPU by targeting its PCI address. This script will automatically unbind your second GPU of the same model if it is not in use by anything else.
+
 ## Script usage examples
 
 Note: `-run` is omitted for obvious reasons.
@@ -372,3 +431,4 @@ Includes an initramfs for the ext4 driver, which will be needed to read the ext4
 Also doesn't use VirtIO becuase nor the kernel or initramfs have the virtio_scsi driver as a built-in:
 
   `./main -m 8G -kernel /boot/vmlinuz-linux -append 'root=/dev/sda1 rw ' -initramfs /boot/initramfs-linux.img -image /zfstmp/kernelbuild/test.ext4.qcow2 -imageformat qcow2 -novirtio -run`
+
