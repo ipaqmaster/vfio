@@ -420,13 +420,15 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     if [ -n "$processesUsingGpu" ]
     then
       processNamesUsingGpu="$(ps $processesUsingGpu)"
-      if [ "$processNamesUsingGpu" = *"Xorg"* ] 
+      if [[ "$processNamesUsingGpu" = *"Xorg"* ]] 
       then
         printer "${colors[yellow]}    It appears Xorg has latched onto this GPU, cannot unbind from driver and give to guest without killing Xorg." "fault"
         if [ -z "$KILLX" ]
         then
           printer "${colors[yellow]}    Specify -killX to allow killing your graphical session for the guest to take a card." "fault"
           printer "${colors[yellow]}    If you're on a dual GPU setup, consider configuring Xorg to ignore your second GPU. (See README.md)" "fault"
+          ((++expectLaunchIssue))
+          return 1
         fi
       else
         printer "${colors[yellow]}    Some processes are latched onto this card, but NOT Xorg. They must be killed to unbind this card." "fault"
