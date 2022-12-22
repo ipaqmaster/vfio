@@ -612,6 +612,19 @@ function printIOMMU {
   exit $?
 }
 
+function checkIOMMU {
+  if [ -z "$(find /sys/class/iommu/ -type l)" ]
+  then
+    printer "${colors[red]}IOMMU directory does not appear to be functional."
+    printer "\tFor an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader." "fault"
+    printer "\tIf you're on an AMD machine instead add 'iommu=1'\n" "fault"
+    printer "\tYou should also add 'iommu=pt' as per the Archwiki to skip PCI devices which don't support passthrough" "fault"
+    printer "\tIf you've already done this and rebooted your host may require extra configuration or may not be compatible with IOMMU if not a bios option to change." "fault"
+    printer "\tFeel free to ask about this in case it's a script fault." "fault"
+    ((++expectLaunchIssue))
+  fi
+}
+
 #    _
 #   / \   _ __ __ _ ___
 #  / _ \ | '__/ _` / __|
@@ -686,7 +699,8 @@ do
       initrd=$2
       shift
     ;;
-    -iommugroups|-iommugrouping)
+    -iommugroups|-iommugrouping|-iommu)
+      checkIOMMU
       printIOMMU
     ;;
     -iso)
@@ -711,8 +725,8 @@ do
       noNet=1
     ;;
     -pci)
+      checkIOMMU
       pciREGEX="$2"
-      checkIOMMU=1
       shift
     ;;
     -pinvcpus)
@@ -789,18 +803,6 @@ deviceTypes[net]='e1000e'
 deviceTypes[scsiController]='ide-hd'
 deviceTypes[vga]='std'
 deviceTypes[serial]='pci-serial'
-fi
-
-  # Check IOMMU is active and grouping things.
-if [ -n "$checkIOMMU" ] && [ -z "$(find /sys/class/iommu/ -type l)" ]
-then
-  printer "${colors[red]}IOMMU directory does not appear to be functional."
-  printer "\tFor an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader." "fault"
-  printer "\tIf you're on an AMD machine instead add these two: 'iommu=1'\n" "fault"
-  printer "\tYou should also add iommu=pt as per the Archwiki to skip PCI devices which don't support passthrough" "fault"
-  printer "\tIf you've already done this and rebooted, your host may not be compatible or some relevant bios settings could be disabled." "fault"
-  printer "\tFeel free to ask about this in case it's a script fault." "fault"
-  ((++expectLaunchIssue))
 fi
 
   # Determine Host cpu cores/threads and what the guest gets based on -pinvcpus (if specified).
