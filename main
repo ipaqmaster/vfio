@@ -712,6 +712,7 @@ do
     ;;
     -pci)
       pciREGEX="$2"
+      checkIOMMU=1
       shift
     ;;
     -pinvcpus)
@@ -791,13 +792,14 @@ deviceTypes[serial]='pci-serial'
 fi
 
   # Check IOMMU is active and grouping things.
-if [ -z "$(find /sys/class/iommu/ -type l)" ]
+if [ -n "$checkIOMMU" ] && [ -z "$(find /sys/class/iommu/ -type l)" ]
 then
-  printer "${colors[red]}IOMMU does not appear to be loaded?"
-  printer "\tFor an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader."
-  printer "\tIf you're on an AMD machine instead add these two: 'iommu=pt iommu=1'\n"
-  printer "\tIf you've already done this and rebooted, your host may not be compatible or some relevant bios settings could be disabled."
-  printer "\tFeel free to ask about this in case it's a script fault."
+  printer "${colors[red]}IOMMU directory does not appear to be functional."
+  printer "\tFor an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader." "fault"
+  printer "\tIf you're on an AMD machine instead add these two: 'iommu=1'\n" "fault"
+  printer "\tYou should also add iommu=pt as per the Archwiki to skip PCI devices which don't support passthrough" "fault"
+  printer "\tIf you've already done this and rebooted, your host may not be compatible or some relevant bios settings could be disabled." "fault"
+  printer "\tFeel free to ask about this in case it's a script fault." "fault"
   ((++expectLaunchIssue))
 fi
 
