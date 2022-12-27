@@ -486,8 +486,17 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   if ! lsmod|grep -q vfio_pci;
   then
     printer "${colors[yellow]}  vfio-pci isn't loaded. Loading it now."
-    sudo modprobe vfio-pci
-    if [ "$?" -ne "0" ]; then printer "${colors[red]}  Could not modprobe vfio-pci. Please fix this." "fault"; exit 1 ; fi
+    result="$(sudo modprobe vfio-pci 2>&1)"
+    if [ "$?" -ne "0" ]
+    then
+      printer "$result" "fault"
+      ((++expectLaunchIssue))
+      printer "${colors[red]}  Could not modprobe vfio-pci. Please fix this." "fault"
+      if grep -qs 'Module vfio-pci not found in directory' <<< "$result"
+      then
+        printer "  ${colors[red]}This error is common after a kernel upgrade pre reboot. Either reboot into your new kernel or downgrade back to the above version to avoid rebooting." "fault" ; fi
+      fi
+    return 1
   fi
 
   lspciOutput="$(lspci -nn)" ; PCIDevices="$(grep -E "$pciREGEX" <<<"$lspciOutput")"
