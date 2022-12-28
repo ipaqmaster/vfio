@@ -61,7 +61,7 @@ function printHelp {
   printer "    Also good for general kernel hackery where the virtio drivers aren't in the kernel or initramfs causing a panic.\n"
 
   printer "  ${colors[cyan]}-ignorevtcon / -ignoreframebuffer / -leavefb / -leaveframebuffer / -leavevtcon"
-  printer "    Intentionally leave the vtcon and efi-framebuffer bindings alone"
+  printer "    Intentionally leave the vtcon and efi-framebuffer bindings as is."
   printer "    Added to work around kernel bug 216475 temporarily (https://bugzilla.kernel.org/show_bug.cgi?id=216475)\n"
 
   printer "  ${colors[cyan]}-image /dev/zvol/zpool/windows"
@@ -459,7 +459,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     fi
   }
 
-  function unbindWithTimeout { echo "$fullBuspath" | sudo timeout --signal 9 5 tee /sys/bus/pci/devices/$fullBuspath/driver/unbind >/dev/null ;}
+  function unbindWithTimeout { echo "$fullBuspath" | sudo timeout --signal 9 5 tee /sys/bus/pci/devices/$fullBuspath/driver/unbind >/dev/null 2>&1 ;}
 
   function tryGracefulGpuUnbind {
     printer "${colors[green]}    Unbinding GPU from:\t${colors[none]}${currentDriver}..."
@@ -515,18 +515,23 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     vendor="$( cut -d':' -f1 <<<"$vendorClass")"
      class="$( cut -d':' -f2 <<<"$vendorClass")"
 
-    if ! [[ "$@" == *"restorebind"* ]] # Do our initial checks unless we're restoring an original driver binding right now
+    currentDriver="$(getPciCurrentDriver "$fullBuspath")" # Always read the current driver for script usage.
+    if [ -n "${deviceDrivers["$vendorClass"]}" ]
     then
-      currentDriver="$(getPciCurrentDriver "$fullBuspath")"
+      originalDriver="${deviceDrivers["$vendorClass"]}"
+    fi
+
+    if ! [[ "$@" == *"restorebind"* ]] # Do our initial driver checks and changes unless we're here to restore an original driver right now.
+    then
       if [ -n "$currentDriver" ]
       then
-        deviceDrivers["$vendorClass"]="$currentDriver" # Add it to the device driver array.
-        driver="${deviceDrivers["$vendorClass"]}"
+        deviceDrivers["$vendorClass"]="$currentDriver" # Add the PCI card's driver to the driver array for later.
+        originalDriver="${deviceDrivers["$vendorClass"]}"
         if [ "$currentDriver" == "vfio-pci" ]
         then
-          printer "    [INFO] ${colors[green]}Already bound to $currentDriver, leaving alone."
+          printer "    [INFO] ${colors[green]}Already bound to vfio-pci, leaving as is."
         else
-          printer "    [INFO] ${colors[green]}Detected driver ${currentDriver}${colors[green]} is using this device. It will be re-bound on VM exit."
+          printer "    [INFO] ${colors[green]}Detected driver ${originalDriver}${colors[green]} is using this device. It will be re-bound on VM exit."
         fi
       else
         printer "    [INFO] ${colors[green]}Has no driver, it will be bound to vfio-pci and will be left that way."
@@ -537,7 +542,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
 
     if [[ "$@" == *"unbind"* ]] && isDry
     then
-      printer "    [DRY]  ${colors[green]}Leaving device alone."
+      printer "    [DRY]  ${colors[green]}Leaving device as is."
     elif [[ "$@" == *"unbind"* ]] && ! isDry
     then
       if isGpu "$fullBuspath"
@@ -565,7 +570,12 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       while ! [ -c /dev/vfio/$iommuGroup ] # Wait a moment for the device to initialize under vfio-pci.
       do
         sleep 1 && ((++iommuTimeout))
-        if [ $iommuTimeout -gt 5 ]; then printer "${colors[red]}    Timed out waiting for bound device to appear under /dev/vfio" "fault" ; exit 1 ; fi
+        if [ $iommuTimeout -gt 5 ]
+        then
+          printer "${colors[red]}    Timed out waiting for bound device to appear under /dev/vfio" "fault"
+          ((++expectLaunchIssue))
+          return 1
+        fi
       done
       permissionsManager takeown /dev/vfio/${iommuGroup}
       echo 1 | sudo tee /sys/bus/pci/rescan >/dev/null
@@ -576,16 +586,16 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       echo
     elif [[ "$@" == *"restorebind"* ]] && ! isDry
     then
-      if [ "$(getPciCurrentDriver "$fullBuspath")" == "${currentDriver}" ]
+      if [ "${currentDriver}" == "${originalDriver}" ]
       then
         : # Nothing to do here
-      elif [ -n "${currentDriver}" ] && [ "${currentDriver}" != "vfio-pci" ]
+      elif [ -n "${originalDriver}" ] && [ "${originalDriver}" != "vfio-pci" ]
       then
-        printer "${colors[green]}    Rebinding $vendorClass back to driver:\t${colors[none]}${currentDriver}"
+        printer "${colors[green]}    Rebinding $vendorClass back to driver:\t${colors[none]}${originalDriver}"
         echo "0x$vendor 0x$class" | sudo tee /sys/bus/pci/drivers/vfio-pci/remove_id >/dev/null 2>&1 # Removing the ID from vfio-pci is not strictly necessary.
-        echo "$fullBuspath" | sudo tee /sys/bus/pci/drivers/vfio-pci/unbind          >/dev/null 2>&1
-        echo "$fullBuspath" | sudo tee /sys/bus/pci/drivers/${currentDriver}/bind             >/dev/null 2>&1
-        if [ "$?" -eq "0" ]; then printer "${colors[green]}    Successfully rebound." ; else printer "${colors[red]}    Was unable to rebind it to ${currentDriver}." "fault"; fi
+        echo "$fullBuspath" | sudo tee /sys/bus/pci/drivers/vfio-pci/unbind          >/dev/null 2>&1 # Above remove_id skips this step but run it "just in case" for certain setups.
+        echo "$fullBuspath" | sudo tee /sys/bus/pci/drivers/${originalDriver}/bind   >/dev/null 2>&1 # Try binding back to the real host driver to finish up.
+        if [ "$?" -eq "0" ]; then printer "${colors[green]}    Successfully rebound." ; else printer "${colors[red]}    Was unable to rebind it to ${originalDriver}." "fault"; fi
       else
         printer "${colors[green]}    Device $vendorClass had no driver so it has been left bound to vfio-pci."
       fi
@@ -850,7 +860,7 @@ fi
 
 if [ -n "$ignoreVtconn" ]
 then
-  printer "${colors[yellow]}-ignoreVtconn\tspecified, efi-framebuffer/vtcon bindings will be left alone."
+  printer "${colors[yellow]}-ignoreVtconn\tspecified, efi-framebuffer/vtcon bindings will be left as is."
   printer "\t\t${colors[yellow]}AMD cards don't mind vtcons; this argument is to workaround a recent"
   printer "\t\t${colors[yellow]}NULL pointer dereference bug in fbcon.c) on NVIDIA-powered hosts"
   printer "\t\t${colors[yellow]}Follow the bug report here: https://bugzilla.kernel.org/show_bug.cgi?id=216475"
