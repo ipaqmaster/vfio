@@ -92,7 +92,7 @@ In general this script has been very useful in my tinkering even outside VFIO ga
   Likely to be useful during new Windows installs if you don't have the virtio iso to pass in with the installer iso.
   Also useful in other departments such as testing kernels and initramfs combinations where virtio isn't a kernel inbuilt or initramfs as a late module.
 
-`-iommugroups` / `-iommugrouping`
+`-iommu` / `-iommugroups` / `-iommugrouping`
 
   Prints IOMMU groupings if available then exists.
 

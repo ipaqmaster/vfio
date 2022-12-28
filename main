@@ -76,7 +76,7 @@ function printHelp {
   printer "  ${colors[cyan]}-iso /path/to/a/diskimage.iso"
   printer "    If you're installing the OS for drivers you may wish to include this\n"
 
-  printer "  ${colors[cyan]}-iommugroups / -iommugrouping"
+  printer "  ${colors[cyan]}-iommu / -iommugroups / -iommugrouping"
   printer "    (Try to) Print IOMMU Groups then exit. Useful for the -PCI arg.\n"
 
   printer "  ${colors[cyan]}-cputhreads / -showpairs / -showthreads / -showcpu"
