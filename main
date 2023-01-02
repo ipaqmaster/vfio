@@ -336,7 +336,7 @@ function bridger {
         if [ -e "/sys/class/net/$interface/master" ]
         then
           master=$(basename $(readlink /sys/class/net/$interface/master))
-          if [ "$master" == "$br" ];
+          if [ "$master" == "$br" ]
           then
             printer "\t  ${interface}"
           fi
@@ -483,7 +483,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
 
   printer "PCI:"
   declare -A -g deviceDrivers # Array for tracking devices and their driver.
-  if ! lsmod|grep -q vfio_pci;
+  if ! lsmod|grep -q vfio_pci
   then
     printer "${colors[yellow]}  vfio-pci isn't loaded. Loading it now."
     result="$(sudo modprobe vfio-pci 2>&1)"
@@ -682,7 +682,7 @@ function printCpuThreads {
 
 function printIOMMU {
   printer "${colors[green]}Ok, printing IOMMU Groups then exiting..."
-  iommuDir="/sys/kernel/iommu_groups";
+  iommuDir="/sys/kernel/iommu_groups"
   if [ -d $iommuDir ]; then for g in `ls -1v $iommuDir`; do printer "IOMMU Group $g"; for d in $iommuDir/$g/devices/* ; do printer "${colors[cyan]}\t$(lspci -nns ${d##*/})"; done; done ; else printer ${colors[red]}"Couldn't find $iommuDir" "fault" ; fi
   exit $?
 }
@@ -1176,7 +1176,7 @@ then
 fi
 
 
-if [[ -n "$bridgeArgs" ]];
+if [[ -n "$bridgeArgs" ]]
 then
   # Make the bridge
   bridger start $bridgeArgs
@@ -1258,7 +1258,7 @@ fi
 #|_|   |_|\__, |
 #         |___/
 
-if isDry;
+if isDry
 then
   printer "---------------------"
   unset quiet
