@@ -494,9 +494,10 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       printer "${colors[red]}  Could not modprobe vfio-pci. Please fix this." "fault"
       if grep -qs 'Module vfio-pci not found in directory' <<< "$result"
       then
-        printer "  ${colors[red]}This error is common after a kernel upgrade pre reboot. Either reboot into your new kernel or downgrade back to the above version to avoid rebooting." "fault" ; fi
+        printer "  ${colors[red]}This error is common after a kernel upgrade pre reboot. Either reboot into your new kernel or downgrade back to the above version to avoid rebooting." "fault"
       fi
-    return 1
+      return 1
+    fi
   fi
 
   lspciOutput="$(lspci -nn)" ; PCIDevices="$(grep -E "$pciREGEX" <<<"$lspciOutput")"
