@@ -26,7 +26,7 @@ fi
 # \__,_|\___| .__/|___/
 #           |_|
 
-for dependency in chrt dhclient dhclient ip qemu-system-x86_64 taskset tr openssl
+for dependency in chrt dhclient ip qemu-system-x86_64 taskset tr openssl
 do
   which $dependency >/dev/null 2>&1 || missing="$missing $dependency "
 done
