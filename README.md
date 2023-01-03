@@ -179,6 +179,10 @@ Optionally pass a kernel file either self compiled or straight out of /boot to t
 
    An optional bios path. If not set the script will try `/usr/share/ovmf/x64/OVMF_CODE.fd` if available.
 
+`-biosvars /tmp/OVMF_VARS.4m.fd`
+   Manually specify a bios variables file for qemu to use. Needed for Secureboot / Win11.
+   You must copy the default OVMF_VARS.fd on your system to a new unique path for your VM OS.
+
 `-usb 'AT2020USB|SteelSeries|Ducky|Xbox|1425:5769'`
 
    If set, the script enumerates `lsusb` with this regex and generates QEMU arguments for passing them through when the VM starts.
@@ -242,6 +246,16 @@ This example would catch any:
 
    If set adds extra arbitrary commands to the cmdline of QEMU (Once invoked)
    Useful for `-device ac97` to get some quick and easy audio support if the host is running pulseaudio.
+
+`-secureboot`
+   Try to search for the secboot version of your system's OVMF_CODE for VM usage.
+   You must also provide -biosvars for your secureboot-enabled VM to use.
+
+`-tpm`
+   Start swtpm and have qemu use that for the guest's TPM needs (Added primarily for Win11 support)
+
+`-win11`
+   Automatically enables -tpm and -secureboot.
 
 `-run`
 

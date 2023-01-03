@@ -19,23 +19,6 @@ then
   colors[white]="\e[97m"
 fi
 
-#     _
-#  __| | ___ _ __  ___
-# / _` |/ _ \ '_ \/ __|
-#| (_| |  __/ |_) \__ \
-# \__,_|\___| .__/|___/
-#           |_|
-
-for dependency in chrt dhclient ip qemu-system-x86_64 taskset tr openssl
-do
-  which $dependency >/dev/null 2>&1 || missing="$missing $dependency "
-done
-if [[ -n "$missing" ]]
-then
-  echo -ne "Couldn't find these programs:$missing\nPlease install the relevant packages or check your \$PATH."
-  exit 1
-fi
-
 # _____                 _   _
 #|  ___|   _ _ __   ___| |_(_) ___  _ __  ___
 #| |_ | | | | '_ \ / __| __| |/ _ \| '_ \/ __|
@@ -59,6 +42,13 @@ function printHelp {
   printer "    Intentionally avoid virtio qemu hardware."
   printer "    Useful for a fresh Win install where you don't have the virtio iso available yet or wish to give the guest physical networking hardware"
   printer "    Also good for general kernel hackery where the virtio drivers aren't in the kernel or initramfs causing a panic.\n"
+
+  printer "  ${colors[cyan]}-bios /usr/share/ovmf/x64/OVMF_CODE.secboot.4m.fd"
+  printer "    Manually specify a bios for qemu to use. Required if the script cannot automatically find one."
+
+  printer "  ${colors[cyan]}-biosvars /tmp/OVMF_VARS.4m.fd"
+  printer "    Manually specify a bios variables file for qemu to use. Needed for Secureboot / Win11."
+  printer "    You must copy the default OVMF_VARS.fd on your system to a new unique path for your VM OS."
 
   printer "  ${colors[cyan]}-ignorevtcon / -ignoreframebuffer / -leavefb / -leaveframebuffer / -leavevtcon"
   printer "    Intentionally leave the vtcon and efi-framebuffer bindings as is."
@@ -136,6 +126,17 @@ function printHelp {
   printer "  ${colors[cyan]}-quiet/-q/-silence/-s"
   printer "    Try to be quiet, only print if we have an error.\n"
 
+  printer "  ${colors[cyan]}-secureboot"
+  printer "    Try to search for the secboot version of your system's OVMF_CODE for VM usage.\n"
+  printer "    You must also provide -biosvars for your secureboot-enabled VM to use.\n"
+
+  printer "  ${colors[cyan]}-tpm"
+  printer "    Start swtpm and have qemu use that for the guest's TPM needs (Added primarily for Win11 support)\n"
+
+  printer "  ${colors[cyan]}-win11"
+  printer "    Automatically enables -tpm and -secureboot.\n"
+
+
   printer "Please see the README.md file for more information about the flags."
   exit 1
 }
@@ -210,6 +211,8 @@ function do_cleanup {
     fi
   fi
   [ -f '/dev/shm/looking-glass' ] && rm /dev/shm/looking-glass
+  [ -n "$swtpmUUID" ] && rm /tmp/${swtpmUUID}/.lock ; rmdir /tmp/${swtpmUUID}
+
   printer "${colors[green]}Cleanup complete."
   exit
 }
@@ -700,6 +703,31 @@ function checkIOMMU {
   fi
 }
 
+function startVirtualTPM {
+  swtpmUUID=$(uuidgen)
+  if ! isDry
+  then
+    printer "${colors[blue]}\t\tStarting a virtual TPM for this guest"
+    mkdir -p /tmp/${swtpmUUID}
+    swtpm socket --tpmstate dir=/tmp/${swtpmUUID},mode=0600 \
+                 --ctrl type=unixio,path=/tmp/${swtpmUUID}.sock,mode=0600 \
+                 --log file=/tmp/${swtpmUUID}/tpm.log --terminate --tpm2 &
+  fi
+  TPMArgs="-chardev socket,id=chrtpm,path=/tmp/${swtpmUUID}.sock -tpmdev emulator,id=tpm0,chardev=chrtpm -device tpm-tis,tpmdev=tpm0"
+}
+
+function checkDependency {
+  for dependency in $@
+  do
+    which $dependency >/dev/null 2>&1 || missing="$missing $dependency "
+  done
+  if [[ -n "$missing" ]]
+  then
+    echo -ne "Couldn't find these programs:$missing\nPlease install the relevant packages or check your \$PATH."
+    exit 1
+  fi
+}
+
 #    _
 #   / \   _ __ __ _ ___
 #  / _ \ | '__/ _` / __|
@@ -724,8 +752,13 @@ do
       biosPath="$2"
       shift
     ;;
+    -biosvars)
+      biosVars="$2"
+      shift
+    ;;
     -bridge)
       bridgeArgs="$(sed 's/,/ /g' <<<$2)"
+      checkDependency dhclient openssl ip
       shift
     ;;
     -colortest|-colourtest)
@@ -735,7 +768,7 @@ do
       exit $?
     ;;
     -cputhreads|-showpairs|-showthreads|-showcpu)
-      printCpuThreads
+      checkDependency tr && printCpuThreads
     ;;
     -extras)
       extras="$2"
@@ -829,9 +862,22 @@ do
     -run)
       DRY="0"
     ;;
+    -secureboot)
+      secureBoot=1
+    ;;
+    -tpm)
+      checkDependency swtpm
+      tpmMode=emulated
+    ;;
     -usb)
       usbREGEX="$2"
       shift
+    ;;
+    -win11)
+      checkDependency swtpm
+      tpmMode=emulated
+      secureBoot=1
+      win11=1
     ;;
     --help|-help)
       printHelp
@@ -844,12 +890,14 @@ do
   shift
 done
 
+
 # ____                 _____ _ _       _     _
 #|  _ \ _ __ ___      |  ___| (_) __ _| |__ | |_
 #| |_) | '__/ _ \_____| |_  | | |/ _` | '_ \| __|
 #|  __/| | |  __/_____|  _| | | | (_| | | | | |_
 #|_|   |_|  \___|     |_|   |_|_|\__, |_| |_|\__|
 #                                |___/
+checkDependency qemu-system-x86_64 chrt taskset
 
 if isDry
 then
@@ -874,6 +922,23 @@ deviceTypes[vga]='virtio'
 deviceTypes[serial]='virtio-serial'
 
 
+if [ -n "$win11" ]
+then
+  printer "${colors[green]}-win11\tspecified, automatically enabled -secureboot and -tpm."
+fi
+
+if [ -n "$secureBoot" ]
+then
+  printer "${colors[green]}-secureboot\tspecified, VM will use a secureboot OVMF if available."
+  if [ -z "$biosVars" ]
+  then
+    printer "${colors[red]}\t\tNo -biosvars file provided. Please copy your system default OVMF_VARS.fd for this VM to use and specify it with the -biosvars argument."
+    ((++expectLaunchIssue))
+  fi
+
+
+fi
+
 if [ -n "$avoidVirtio" ]
 then
 printer "${colors[green]}-avoidVirtio\tspecified, will try to avoid virtio-powered devices for guest compatibility."
@@ -882,6 +947,12 @@ deviceTypes[net]='e1000e'
 deviceTypes[scsiController]='ide-hd'
 deviceTypes[vga]='std'
 deviceTypes[serial]='pci-serial'
+fi
+
+if [ -n "$tpmMode" ]
+then
+  printer "${colors[green]}-tpm\t\tspecified. Will give the guest a virtual TPM"
+  startVirtualTPM
 fi
 
   # Determine Host cpu cores/threads and what the guest gets based on -pinvcpus (if specified).
@@ -929,6 +1000,8 @@ fi
 if [[ -z "$biosPath" ]]
 then
   defaultBiosPath="/usr/share/ovmf/x64/OVMF_CODE.fd"
+  defaultSecbootBiosPath="/usr/share/ovmf/x64/OVMF_CODE.secboot.4m.fd"
+  [ -n "$win11" ] && defaultBiosPath="$defaultSecbootBiosPath"
   if [[ ! -f "$defaultBiosPath" ]]
   then
     printer "${colors[red]}-bios\t\tnot specified and couldn't find default '$defaultBiosPath'.\n\t\tPlease install OVMF or set your .fd file with the -bios argument"
@@ -939,6 +1012,18 @@ then
   fi
 else
   if [ ! -f "$biosPath" ] ; then printer "${colors[red]}-bios\t\tdoesn't appear to exist: ${colors[none]}\t${biosPath}" ; ((++expectLaunchIssue)) ; fi
+fi
+
+if [ -n "$biosVars" ]
+then
+  if [ ! -f "$biosVars" ]
+  then
+    printer "${colors[red]}-biospath\tdoesn't appear to exist: ${colors[none]}\t${biosPath}"
+    ((++expectLaunchIssue))
+  fi
+
+  permissionsManager takeown $biosVars
+  printer "${colors[green]}-biosvars\tspecified, using for this VM:\t\t\t${colors[none]}${biosVars}"
 fi
 
   # Eval kernel/initrd/append args if included
@@ -1066,6 +1151,7 @@ smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
 coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
 coreArgs+=" -name $(basename $0),debug-threads=on"
 coreArgs+=" -drive if=pflash,format=raw,unit=0,readonly=on,file=$biosPath"
+[ -n "$biosVars" ] && coreArgs+=" -drive if=pflash,format=raw,unit=1,file=$biosVars"
 coreArgs+=" -serial mon:stdio" # Add a qemu serial device
 coreArgs+=" -nodefaults"       # Don't use any default devices
 
@@ -1269,6 +1355,7 @@ then
   if [ -n "$pciArgs" ]    ; then printer "PCI :\n${colors[blue]}${pciArgs}"                       ; fi
   if [ -n "$lgArgs" ]     ; then printer "Looking Glass:\n${colors[blue]}${lgArgs}"               ; fi
   if [ -n "$kernelArgs" ] ; then printer "Direct Kernel Boot Args:\n${colors[blue]}${kernelArgs}" ; fi
+  if [ -n "$TPMArgs" ]    ; then printer "TPM:\n${colors[blue]}${TPMArgs}"                        ; fi
   if [ -n "$extras" ]     ; then printer "Extras:\n${colors[blue]}${extras}"                      ; fi
   printer "\nRun the script with the same arguments again and include ${colors[red]}-run${colors[none]} to actually pass these to qemu-system-x86_64\n"
   exit 0
@@ -1276,7 +1363,7 @@ else
   sudo prlimit --pid $$ --memlock=unlimited:unlimited
   set -m # Allow scripted bash job controls (fg, bg, etc)
   echo -ne "Starting qemu now.\n\n"
-  eval "qemu-system-x86_64 ${coreArgs} ${hugeArgs} ${networkArgs} ${usbArgs} ${pciArgs} ${lgArgs} ${kernelArgs} ${extras} &"
+  eval "qemu-system-x86_64 ${coreArgs} ${hugeArgs} ${networkArgs} ${usbArgs} ${pciArgs} ${lgArgs} ${kernelArgs} ${TPMArgs} ${extras} &"
   qemuPid=$!
   echo qemu pid is $qemuPid
   sudo chrt -p 1 -p $qemuPid >/dev/null                  # Set qemus threads to have high priority
