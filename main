@@ -211,7 +211,7 @@ function do_cleanup {
     fi
   fi
   [ -f '/dev/shm/looking-glass' ] && rm /dev/shm/looking-glass
-  [ -n "$swtpmUUID" ] && rm /tmp/${swtpmUUID}/.lock ; rmdir /tmp/${swtpmUUID}
+  [ -n "$swtpmUUID" ] && { rm /tmp/${swtpmUUID}/.lock ; rmdir /tmp/${swtpmUUID} ;}
 
   printer "${colors[green]}Cleanup complete."
   exit
