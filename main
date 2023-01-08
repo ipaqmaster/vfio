@@ -211,7 +211,7 @@ function do_cleanup {
     fi
   fi
   [ -f '/dev/shm/looking-glass' ] && rm /dev/shm/looking-glass
-  [ -n "$swtpmUUID" ] && { rm /tmp/${swtpmUUID}/.lock ; rmdir /tmp/${swtpmUUID} ;}
+  [ -n "$swtpmUUID" ] && { kill $swtpmPid >/dev/null 2>&1 ; find /tmp/${swtpmUUID}/ -type f -delete; rmdir /tmp/${swtpmUUID} ;}
 
   printer "${colors[green]}Cleanup complete."
   exit
@@ -712,6 +712,7 @@ function startVirtualTPM {
     swtpm socket --tpmstate dir=/tmp/${swtpmUUID},mode=0600 \
                  --ctrl type=unixio,path=/tmp/${swtpmUUID}.sock,mode=0600 \
                  --log file=/tmp/${swtpmUUID}/tpm.log --terminate --tpm2 &
+    swtpmPid=$!
   fi
   TPMArgs="-chardev socket,id=chrtpm,path=/tmp/${swtpmUUID}.sock -tpmdev emulator,id=tpm0,chardev=chrtpm -device tpm-tis,tpmdev=tpm0"
 }
