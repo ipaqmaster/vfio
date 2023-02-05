@@ -956,14 +956,18 @@ then
 fi
 
   # Determine Host cpu cores/threads and what the guest gets based on -pinvcpus (if specified).
-hostThreads=$(grep -Pom1 'siblings.*\ \K([0-9]+)$' /proc/cpuinfo )
-  hostCores=$(grep -Pom1 'cpu cores.*\ \K([0-9]+)$' /proc/cpuinfo)
-  if [ "$((hostCores * 2))" == "$hostThreads" ]; then hostIsHT=1; fi #hyperthreading check
+hostTotalThreadCount=$(grep -Pom1 'siblings.*\ \K([0-9]+)$' /proc/cpuinfo )
+hostCores=$(grep -Pom1 'cpu cores.*\ \K([0-9]+)$' /proc/cpuinfo)
 
-if [ -z "$vcpuThreads" ] # vcpu pinning
+  # Roll for hyperthreading (Lazy, should be replaced with a cpu feature check)
+if [ "$((hostCores * 2))" == "$hostTotalThreadCount" ]; then hostIsHT=1; fi
+
+if [ -z "$vcpuThreads" ] # If no vcpu pinning fallback to half host CPU.
 then
-  guestCores=$hostCores ; if [ -n "$hostIsHT" ]; then guestThreads=2; else guestThreads=1; fi
-  printer "${colors[yellow]}-pinvcpus\tnot specified, guest will execute on full host CPU without any pinning:\t${colors[none]}($hostCores) with ($hostThreads) threads."
+  guestCores=$(((${hostCores} / 2)))
+  guestTotalThreadCount=$(((${hostTotalThreadCount} / 2)))
+  if [ -n "$hostIsHT" ]; then guestThreads=2; else guestThreads=1; fi
+  printer "${colors[yellow]}-pinvcpus\tnot specified, guest will execute on half the host's CPU threads total (No pinning):\t${colors[none]} ${guestCores} (${hostCores}/2) giving the guest ${guestTotalThreadCount} (${hostTotalThreadCount}/2) threads."
 else
   if grep -qE '^([0-9]|,)+$' <<< $vcpuThreads
   then
