@@ -822,7 +822,6 @@ do
     ;;
     -killx)
       KILLX=1
-      shift
     ;;
     -looking-glass|-lookingglass|-lg)
       lookingglass="1"
