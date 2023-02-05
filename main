@@ -210,7 +210,7 @@ function do_cleanup {
       echo 0 | writeHugeInfo ${hugepageSizeKB} nr_hugepages # pack up
     fi
   fi
-  [ -f '/dev/shm/looking-glass' ] && rm /dev/shm/looking-glass
+  [ -f '/dev/shm/looking-glass' ] && rm -fv /dev/shm/looking-glass
   [ -n "$swtpmUUID" ] && { kill $swtpmPid >/dev/null 2>&1 ; find /tmp/${swtpmUUID}/ -type f -delete; rmdir /tmp/${swtpmUUID} ;}
 
   printer "${colors[green]}Cleanup complete."
