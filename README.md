@@ -353,15 +353,16 @@ For best VM performance in any scenario:
 
 5. Isolating the cores on the host that you pinned the guest to. I use the below to squeeze every last drop of low latency responsiveness on my VM:
 ```
-isolcpus= thread,range,to-isolate  # Tell the kernel to not schedule work onto these, as they will be the ones we pin QEMU to
+isolcpus=thread,range,to-isolate   # Tell the kernel to not schedule work onto these, as they will be the ones we pin QEMU to
 nohz_full=thread,range,to-isolate  # Tell the kernel to NOT send timer ticks to these cores, their only job will be QEMU so no need to check in. "Adaptive Ticks"
 rcu_nocbs=thread,range,to-isolate  # Tell the kernel to handle RCU callbacks for these on any other CPU but themselves.
 rqaffinity=remaining,host,threads  # Use these remaining host cores to handle all host IRQ/RCU
 rcu_nocb_poll                      # Enforce the above by polling only ever so often rather than having cores handle it themselves
 systemd.unified_cgroup_hierarchy=0 # Enables systemd v1 cgroups
 ```
-6. Passing in a real disk to your guest to boot from such as a dedicated NVME controller with the -pci argument will always perform much better than any QEMU disk method, even though this script creates an iothread per guest disk, you can't go wrong with raw NVME passthrough.
-   The next closest contender would be a raw partition on the host passed as a virtio disk, or a raw.img file on a lightweight host FS such as ext4 (with a goal of minimizing overhead)
+6. Passing in a real disk to your guest to boot from like a dedicated NVMe controller with the `-pci` argument will always perform much better than any QEMU virtual disk method. Even though this script creates an iothread per guest disk you can't do better than raw controller passthrough. Especially NVMe.
+
+   The next closest contender would be a raw partition on the host passed as a virtio disk. Then next up: A raw image file on a lightweight host FS such as ext4 (with a goal of minimizing overhead).
 
 ## Saving your Display Manager from being killed to unbind the guest card (Xorg) / General guest GPU pre-prep
 
