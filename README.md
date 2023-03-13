@@ -6,7 +6,8 @@ This is a bash script I've put a lot of love into trying to avoid defining VMs i
 
 It starts a VM by calling `qemu-system-x86_64` directly but can automatically handle extra arguments all with the convenience of a terminal with history and the ability to just backspace something out if you don't want it in the guest.
 
-It also happens to make Windows VM gaming a pinch on my single-gpu 2080Ti host and older dual-gpu host with Looking Glass. Now if only NVIDIA would *officially* support vGPUs on their consumer hardware...
+It also happens to make Windows VM gaming a pinch on my single-gpu 2080Ti host and older dual-gpu host with Looking Glass.\
+Now if only NVIDIA would *officially* support vGPUs on their consumer hardware...
 
 ## What does it actually do
 
@@ -18,36 +19,32 @@ It's a good question. On the surface it's just a qemu wrapper... But I swear by 
 
   * Takes as many virtual disks or iso's as you want to pass in with an iothread on the host for each virtual disk.
 
-    Or if you're passing in an entire disk array, save the overhead and pass the entire HBA controller with (`-PCI 'SATA'`)
-
-    (Assuming that doesn't include your host disk!)
+    Or if you're passing in an entire disk array, save the overhead and pass the entire HBA controller with `-PCI 'SATA'` (Assuming your host disk isn't SATA driven!)
 
   * Takes an optional regular expression of PCI and USB devices to pass to the VM when starting it.
   * 
     (My favorite is `-PCI 'NVIDIA|USB'` to give it my card with all host USB controllers)
 
-  * *Automatically unbinds all specified PCI devices from their driver's onto vfio-pci if they're not already on it.
+  * Automatically unbinds all specified PCI devices from their driver's onto vfio-pci if they're not already on it.\
+    (No need for early host driver blocking or early PCI device vfio binding)
 
-    (No need for early host driver blocking or early PCI device vfio binds)
+  * Automatically REBINDS all PCI devices back to their originating driver on guest shutdown\
+    (When applicable)
 
-  * ***Automatically REBINDS all PCI devices back to their originating driver*** on guest exit (When applicable)
+  * Automatically kills the display-manager if the GPU is stuck unbinding for a guest to use\
+    (Unavoidable in single GPU scenarios)\
+    But also rebinds the card back to its driver on guest exit and restarts the DM back to the login screen. Almost seamless...
 
-  * Automatically kills the display-manager if the GPU is stuck unbinding for a guest to use (Unavoidable in single GPU scenarios)
-
-    But also rebinds the card back to its driver on guest exit and restarts the DM back to the login screen.
-    
-    Almost seamless...
-
-  * Makes network bridges automatically or attaches the VM to an existing bridge with a tap adapter (Standard VM stuff) giving your VM a true Layer 2 network presence on your LAN, DHCP, direct port exposure for RDP, SSH, and all.
-
-
+  * Makes network bridges automatically or attaches the VM to an existing bridge with a tap adapter if specified\
+    giving your VM a true Layer 2 network presence on your LAN with direct exposure for RDP, SSH, and all.\
     (Useful to avoid the default "One way trip" nat adapter)
-  
-  * Takes optional vcpuPinning arguments if you've isolated cores on your host to help avoid stutter.
 
-  * Can describe your host's IOMMU Groups and CPU thread to core pairs so you know the true CPU topology to isolate and pin with appropriately.
-    
-    *(For now core isolation must be handled outside the script. Sorry! it annoys me too. But the best time to isolate is in the kernel arguments, of which I've provided some powerful examples lower down.)*
+  * Can describe your host's IOMMU groups and CPU thread pairings per core to aid with vcpu pinning (And isolation planning).
+
+  *  Takes optional vcpu pinning arguments to help avoid stutter.\
+    (No automatic isolation support just yet. I haven't found a modern method better than boot-time cpu isolation via kernel args that I'd be happy to implement while avoiding reboots.)\
+    (`systemctl set-property --runtime` slice management doesn't take care of IRQ and other isolation performance tweaks I'd like to manage in realtime. But may be enough?)\
+    (For now, I've provided some powerful cpu isolation boot argument examples below. Sorry!)
 
   * Dynamically allocate hugepages for the VM *on the fly* if host memory isn't too fragmented, otherwise it will notice existing hugepages and use them if there's enough free from earlier/boot time allocation.
 
@@ -57,18 +54,27 @@ It's a good question. On the surface it's just a qemu wrapper... But I swear by 
 
   * Optionally includes key hyperv enlightenments for Windows guest performance.
 
-  * And sometimes more! (*There's most likely many more arguments below*)
+  * And more!
 
 ## What hosts and installs are supported?
 
-Put short, it's designed for Archlinux but confirmed working in Ubuntu 20.04 and 18.04 as well.
+This script has been designed for Archlinux however is going to work just fine on any distro shipping a modern kernel and qemu binary.\
+I've also confirmed that this works on Ubuntu 20.04 and 18.04 as well - But again, it'll work on anything shipping modern kernel and qemu versions. Maybe at worst a minor tweak for path differences distro to distro.
 
-It seems any distribution running a modern Linux kernel and the latest QEMU will do. The host will need to support either Intel's VT-d or AMD-Vi (May just be labelled IOMMU in bios) While even my older PC from the early 2010s supports these modern boards do a much better job for latency and performance.
+The host will need to support either Intel's VT-d or AMD-Vi (May just be labelled IOMMU in bios) While even my older PC from the early 2010s supports these modern boards do a much better job for latency and performance.\
 Also don't forget to add the relevant AMD or Intel VFIO arguments to your kernel's boot arguments. On some distros straying enough from the rolling lifestyle, you may need to specify the OVMF path using `-bios`, but that should be the worst of it. 
 
-Even my partially retired desktop from 2011 with a 3930K CPU and x79 motherboard can run this script using a Looking Glass window into the guest through X via a second GPU for the host.
+Even my partially retired desktop from 2011 with a 3930K CPU and SABERTOOTH X79 motherboard can run this script with two GPUs and a Looking Glass client window into the guest from its desktop.
 
-On my 2020 PC build (3900x, DDR4@3600, single 2080Ti, M.2 SSD in the back slot *just for the guest*) I play Overwatch, Mortal Kombat, Battlefield and more in a VM on this machine with ease. As for performance I'm glad to be able to say I genuinely can't tell I'm in a VM (without checking Device Manager of course). There's no stutters or any other telltale signs that its not a real computer in gameplay when pinning and isolation are done correctly; which I find to be particularly important in multiplayer titles.
+On my 2020 PC build (3900x, DDR4@3600, single 2080Ti, M.2 SSD in the back slot *just for the guest*) It has no trouble playing the below titles in a VM with ease:
+
+* Overwatch
+* Mortal Kombat multiplayer
+* Battlefield 1,3,4,2042
+
+
+And as for performance I'm glad to be able to claim I can't tell the gameplay is inside a VM (without checking Device Manager of course).\
+There's no stutters or any other telltale signs that its not a real computer when vcpu pinning and host core isolation are done correctly.
 
 
 # Why make this
@@ -346,14 +352,14 @@ For best VM performance in any scenario:
 
 
 5. Isolating the cores on the host that you pinned the guest to. I use the below to squeeze every last drop of low latency responsiveness on my VM:
-
-* isolcpus= thread,range,to-isolate  # Tell the kernel to not schedule work onto these, as they will be the ones we pin QEMU to
-* nohz_full=thread,range,to-isolate  # Tell the kernel to NOT send timer ticks to these cores, their only job will be QEMU so no need to check in. "Adaptive Ticks"
-* rcu_nocbs=thread,range,to-isolate  # Tell the kernel to handle RCU callbacks for these on any other CPU but themselves.
-* irqaffinity=remaining,host,threads # Use these remaining host cores to handle all host IRQ/RCU
-* rcu_nocb_poll                      # Enforce the above by polling only ever so often rather than having cores handle it themselves
-* systemd.unified_cgroup_hierarchy=0 # Enables systemd v1 cgroups
-
+```
+isolcpus= thread,range,to-isolate  # Tell the kernel to not schedule work onto these, as they will be the ones we pin QEMU to
+nohz_full=thread,range,to-isolate  # Tell the kernel to NOT send timer ticks to these cores, their only job will be QEMU so no need to check in. "Adaptive Ticks"
+rcu_nocbs=thread,range,to-isolate  # Tell the kernel to handle RCU callbacks for these on any other CPU but themselves.
+rqaffinity=remaining,host,threads  # Use these remaining host cores to handle all host IRQ/RCU
+rcu_nocb_poll                      # Enforce the above by polling only ever so often rather than having cores handle it themselves
+systemd.unified_cgroup_hierarchy=0 # Enables systemd v1 cgroups
+```
 6. Passing in a real disk to your guest to boot from such as a dedicated NVME controller with the -pci argument will always perform much better than any QEMU disk method, even though this script creates an iothread per guest disk, you can't go wrong with raw NVME passthrough.
    The next closest contender would be a raw partition on the host passed as a virtio disk, or a raw.img file on a lightweight host FS such as ext4 (with a goal of minimizing overhead)
 
