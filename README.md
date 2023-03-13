@@ -6,7 +6,7 @@ This is a bash script I've put a lot of love into trying to avoid defining VMs i
 
 It starts a VM by calling `qemu-system-x86_64` directly but can automatically handle extra arguments all with the convenience of a terminal with history and the ability to just backspace something out if you don't want it in the guest.
 
-It also happens to make Windows VM gaming a pinch on my single-gpu 2080Ti host and older dual-gpu host with Looking Glass. Now if only NVIDIA would *officially* support vGPUs onafaf  their consumer hardware...
+It also happens to make Windows VM gaming a pinch on my single-gpu 2080Ti host and older dual-gpu host with Looking Glass. Now if only NVIDIA would *officially* support vGPUs on their consumer hardware...
 
 ## What does it actually do
 
