@@ -967,7 +967,7 @@ then
   guestCores=$(((${hostCores} / 2)))
   guestTotalThreadCount=$(((${hostTotalThreadCount} / 2)))
   if [ -n "$hostIsHT" ]; then guestThreads=2; else guestThreads=1; fi
-  printer "${colors[yellow]}-pinvcpus\tnot specified, guest will execute on half the host's CPU threads total (No pinning):\t${colors[none]} ${guestCores} (${hostCores}/2) giving the guest ${guestTotalThreadCount} (${hostTotalThreadCount}/2) threads."
+  printer "${colors[yellow]}-pinvcpus\tnot specified, Guest will run on half the host's total (No pinning):\t${colors[none]} ${guestCores} (${hostCores}/2) guest cores totalling ${guestTotalThreadCount} (${hostTotalThreadCount}/2) guest vcpu threads."
 else
   if grep -qE '^([0-9]|,)+$' <<< $vcpuThreads
   then
