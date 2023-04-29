@@ -171,7 +171,9 @@ function permissionsManager { # chown's things before qemu starts, but also trie
 }
 
  # Check if script is in dry mode.
-function isDry { if [ $DRY -eq 1 ] ; then return 0 ; else return 1 ; fi ; }
+function isDry { if [ $DRY -eq 1 ] ; then return 0 ; else return 1 ; fi ;}
+
+function hostIsHyperthreaded { grep -qs ' ht ' /proc/cpuinfo ;}
 
  # Read numeric value from meminfo
 function readMeminfo   { if [ -n "$1" ]; then grep -m1 "$1" /proc/meminfo | grep -Eo '[0-9]+'; fi ; }
@@ -955,19 +957,25 @@ then
   startVirtualTPM
 fi
 
-  # Determine Host cpu cores/threads and what the guest gets based on -pinvcpus (if specified).
-hostTotalThreadCount=$(grep -Pom1 'siblings.*\ \K([0-9]+)$' /proc/cpuinfo )
-hostCores=$(grep -Pom1 'cpu cores.*\ \K([0-9]+)$' /proc/cpuinfo)
+  # Determine host total cpu threads.
+hostTotalThreads=$(grep -E 'processor' /proc/cpuinfo |wc -l)
 
-  # Roll for hyperthreading (Lazy, should be replaced with a cpu feature check)
-if [ "$((hostCores * 2))" == "$hostTotalThreadCount" ]; then hostIsHT=1; fi
+  # Roll for hyperthreading to determine core count.
+if hostIsHyperthreaded
+then
+  hostCores=$(((${hostTotalThreads}/2)))
+  hyperthreaded="hyperthreaded"
+else
+  hostCores=${hostTotalThreads}
+fi
 
-if [ -z "$vcpuThreads" ] # If no vcpu pinning fallback to half host CPU.
+if [ -z "$vcpuThreads" ] # If no vcpu pinning specified fallback to half the host CPU unpinned.
 then
   guestCores=$(((${hostCores} / 2)))
-  guestTotalThreadCount=$(((${hostTotalThreadCount} / 2)))
-  if [ -n "$hostIsHT" ]; then guestThreads=2; else guestThreads=1; fi
-  printer "${colors[yellow]}-pinvcpus\tnot specified, Guest will run on half the host's total (No pinning):\t${colors[none]} ${guestCores} (${hostCores}/2) guest cores totalling ${guestTotalThreadCount} (${hostTotalThreadCount}/2) guest vcpu threads."
+  guestTotalThreadCount=$(((${hostTotalThreads} / 2)))
+  if hostIsHyperthreaded; then guestThreads=2; else guestThreads=1; fi # For qemu's smt,threads= argument
+  printer "${colors[yellow]}-pinvcpus\tnot specified, Guest will get half host's core total as vcpus (No pinning):\t${colors[none]} ${guestCores} $(hostIsHyperthreaded && printer "hyperthreaded")vcpu's (${hostCores}/2) $(hostIsHyperthreaded && printer "for a total of ${guestTotalThreadCount} vcpu threads (${hostTotalThreads}/2).")"
+
 else
   if grep -qE '^([0-9]|,)+$' <<< $vcpuThreads
   then
@@ -976,7 +984,7 @@ else
     OLDIFS="$IFS" ; IFS=', ' vcpuArray=($(echo $vcpuThreads)) ; IFS="$OLDIFS"
     vcpuCount=$(wc -w <<<${vcpuArray[*]})
       # Check if specified -pinvcpus thread count is divisible by 2. Use hyperthreading/smt if supported
-    if (( $vcpuCount % 2 == 0 )) && [ "$hostIsHT" == "1" ] ; then guestCores=$(( vcpuCount / 2 )) ; guestThreads=2; else guestCores=$vcpuCount ; guestThreads=1 ; fi
+    if (( $vcpuCount % 2 == 0 )) && hostIsHyperthreaded ; then guestCores=$(( vcpuCount / 2 )) ; guestThreads=2; else guestCores=$vcpuCount ; guestThreads=1 ; fi
   vcpuPinningAfterQemuStart=1
   else
     echo "This script's -pinvcpus flag only accepts comma delimited threads at the moment such as: 0,1,2,3,4,5,6, or 0,2,4,8 -- Sorry!"
