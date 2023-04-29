@@ -1111,7 +1111,7 @@ then
   then
     hugepageSizeMB="(($(grep -Eo '[0-9]+' <<< $hugepageSize) * 1024))"
   else
-    printer "${color[red]}\t\tUnable to determine ${hugePath}'s hugepage size via the mountpoint. Panicking." "fault"; ((++expectLaunchIssue))
+    printer "${colors[red]}\t\tUnable to determine ${hugePath}'s hugepage size via the mountpoint. Panicking." "fault"; ((++expectLaunchIssue))
   fi
   hugepageSizeKB="$((hugepageSizeMB * 1024))"
   printer "${colors[green]}\t\tThe selected hugepage mount's size per page is ${hugepageSizeMB}M"
@@ -1143,7 +1143,7 @@ then
         printer "\t${colors[yellow]}(${colors[none]}${hugepagesFree} ${colors[yellow]}pages free out of ${pagesRequired}${colors[yellow]} requested. With that the highest value achieved right now is: -mem $((hugepagesFree * hugepageSizeMB))${colors[yellow]})\n"
         ((++expectLaunchIssue))
       fi
-      printer "\n\n${color[green]}Hugepages ready."
+      printer "\n\n${colors[green]}Hugepages ready."
     fi
   fi
 fi
@@ -1310,11 +1310,10 @@ if [ -n "${killedCmdlines}" ]
 then
   printer "${colors[blue]}Restoring desktop processes killed to unbind the card:"
 
-for process in ${!killedCmdlines[@]}
-do
-  eval "${killedCmdlines[${process}]} >/dev/null 2>&1 &"
-done
-
+  for process in ${!killedCmdlines[@]}
+  do
+    eval "${killedCmdlines[${process}]} >/dev/null 2>&1 &"
+  done
 
 fi
 
