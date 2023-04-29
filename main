@@ -484,7 +484,64 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       fi
 
     fi
-}
+  }
+
+  function GVTgManager {
+    declare -A -g PCIDeviceGVTg
+
+    case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
+      create)
+        unset GVTgMadeDevice
+        PCIDeviceGVTg["${fullBuspath}"]=$(uuidgen) # Generate and store a uuid for new virtual device this session
+        if [ -n "${GVTgPreference}" ]
+        then
+          if ! [ -d /sys/bus/pci/devices/${fullBuspath}/mdev_supported_types/${GVTgPreference} ]
+          then
+            printer "${colors['red']}\tCouldn't seem to find your preference [${GVTgPreference}] as an option for this device"
+            ((++expectLaunchIssue))
+            return 1
+          else
+            GVTgMode="${GVTgPreference}"
+          fi
+        else
+          GVTgMode=$(ls -1 /sys/bus/pci/devices/${fullBuspath}/mdev_supported_types/ | tail -n1)
+          printer "${colors['green']}\tUsing autodiscovered best mdev type: ${GVTgMode}"
+        fi
+
+        if [ -d /sys/bus/pci/devices/${fullBuspath}/mdev_supported_types/${GVTgPreference} ]
+        then
+          printer "Creating GVT-g virtual device for ${fullBuspath} with ID ${PCIDeviceGVTg["${fullBuspath}"]}"
+          echo ${PCIDeviceGVTg["${fullBuspath}"]} | sudo tee /sys/bus/pci/devices/${fullBuspath}/mdev_supported_types/${GVTgMode}/create >/dev/null 2>&1
+          GVTgMadeDevice=1
+        fi
+      ;;
+      delete)
+        printer "Removing our virtual device"
+        echo 1 | sudo tee /sys/bus/pci/devices/${fullBuspath}/mdev_supported_types/${GVTgMode}/devices/${PCIDeviceGVTg["${fullBuspath}"]}/remove >/dev/null 2>&1
+      ;;
+    esac
+  }
+
+    function genArgs {
+      if isGpu "${fullBuspath}" && [[ "$@" != *"restorebind"* ]] # Special condition for GPUs
+      then
+        guestGetsGPU=1
+        if [ -z "${GVTgMadeDevice}" ]
+        then
+          pciArgs+=" -device vfio-pci,x-vga=on,multifunction=on,host=$fullBuspath,id=hostdev$inc"
+        else
+          pciArgs+=" -device vfio-pci,sysfsdev=/sys/bus/mdev/devices/${PCIDeviceGVTg["${fullBuspath}"]},id=hostdev$inc"
+        fi
+        if [ -n "$romfilePath" ] && [ -f "$romfilePath" ]
+        then
+          printer "${colors[green]}    Romfile will be passed to the GPU on VM start.\t"
+          pciArgs+=",romfile=$romfilePath" #Tack romfile on the end if specified
+        fi
+      else
+        pciArgs+=" -device vfio-pci,host=$fullBuspath,id=hostdev$inc"
+      fi
+      ((++inc))
+  }
 
   printer "PCI:"
   declare -A -g deviceDrivers # Array for tracking devices and their driver.
@@ -512,10 +569,15 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   do
     shortBuspath="$(cut -d' ' -f1<<<$PCIDevice)"
     fullBuspath="0000:$shortBuspath"
-    iommuGroup="$(basename $(readlink /sys/bus/pci/devices/$fullBuspath/iommu_group))"
+    iommuGroup="$(basename $(readlink /sys/bus/pci/devices/$fullBuspath/iommu_group) 2>/dev/null)"
 
     printer "  Matched:\t${colors[blue]}$PCIDevice"
-    printer "  IOMMU Group:\t${colors[blue]}${iommuGroup}"
+    if [ -n "$iommuGroup" ]
+    then
+      printer "  IOMMU Group:\t${colors[blue]}${iommuGroup}"
+    else
+      printer "  IOMMU Group:\t${colors['yellow']}None? ${colors['none']}(Possibly valid if you know what you're doing)"
+    fi
 
     vendorClass="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$PCIDevice )"
     vendor="$( cut -d':' -f1 <<<"$vendorClass")"
@@ -551,7 +613,12 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       printer "    [DRY]  ${colors[green]}Leaving device as is."
     elif [[ "$@" == *"unbind"* ]] && ! isDry
     then
-      if isGpu "$fullBuspath"
+      if [ -n "$GVTg" ] && [ -d /sys/bus/pci/devices/${fullBuspath}/mdev_supported_types ]
+      then
+        printer "    This device supports GVT-g; Creating a virtual device."
+        GVTgManager create || return $?
+        genArgs
+      elif isGpu "$fullBuspath"
       then
         if [ -n "${currentDriver}" ] && [ ! "${currentDriver}" == "vfio-pci" ]
         then
@@ -564,7 +631,10 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
 
     if [[ "$@" == *"vfiobind"* ]] && ! isDry
     then
-        if [ "$currentDriver" != "vfio-pci" ]
+        if [ -n "$GVTg" ] && [ -d /sys/bus/pci/devices/${fullBuspath}/mdev_supported_types ]
+        then
+          return # Noop
+        elif [ "$currentDriver" != "vfio-pci" ]
         then
           printer "${colors[green]}    Adding ID and binding to:\t${colors[none]}vfio-pci"
           echo "0x$vendor 0x$class" | sudo timeout --signal 9 5 tee /sys/bus/pci/drivers/vfio-pci/new_id >/dev/null 2>&1
@@ -592,7 +662,10 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
       echo
     elif [[ "$@" == *"restorebind"* ]] && ! isDry
     then
-      if [ "${currentDriver}" == "${originalDriver}" ]
+      if [ -n "$GVTg" ] && [ -d /sys/bus/pci/devices/${fullBuspath}/mdev_supported_types ]
+        then
+          GVTgManager delete
+      elif [ "${currentDriver}" == "${originalDriver}" ]
       then
         : # Nothing to do here
       elif [ -n "${originalDriver}" ] && [ "${originalDriver}" != "vfio-pci" ]
@@ -621,6 +694,8 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     fi
     ((++inc))
   done <<<"$PCIDevices"
+
+  genArgs
 
   if [[ $var == *"vfiobind"* ]] ; then echo -ne "Here are the completed pciArgs:\n    $pciArgs"; fi
 }
@@ -877,6 +952,10 @@ do
       extras="$2"
       shift
     ;;
+    -gvt-g|-gvtg)
+      GVTg=1
+      [[ "$2" == *"GVTg"* ]] && { GVTgPreference=$2 ; shift ;}
+    ;;
     -hostaudio)
       hostAudio="1"
     ;;
@@ -1057,6 +1136,23 @@ then
   startVirtualTPM
 fi
 
+if [ -n "$GVTg" ]
+then
+  printer "${colors[green]}-GVT-g\t\tspecified. Will check PCI devices for support and use that instead where applicable."
+  if [ -n "$GVTgPreference" ]
+  then
+    printer "${colors[green]}\t\tYou've also specified a preference to use ${GVTgPreference}. Will aim to use that mode."
+  fi
+  for GVTgDriver in kvmgt vfio-iommu-type1 mdev
+  do
+    GVTgDriverName=$(sed 's/-/_/g' <<< ${GVTgDriver})
+    if ! lsmod|grep -q "^${GVTgDriverName}"
+    then
+      printer "\t\t${colors['blue']}Loading module: $GVTgDriver for GVTg support..."
+      sudo modprobe $GVTgDriver
+    fi
+  done
+fi
   # Determine host total cpu threads.
 hostTotalThreads=$(grep -E 'processor' /proc/cpuinfo |wc -l)
 
