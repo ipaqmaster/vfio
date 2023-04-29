@@ -731,6 +731,106 @@ function checkDependency {
   fi
 }
 
+function checkKvmHypervisorEligibility {
+  # Check for kvm module presence and host support. Try to self resolve any issues which pop up.
+  
+  function cpuSupportsVirtualization { grep -Esq "vmx|svm|0xc0f" /proc/cpuinfo ; return $? ;}
+
+  function kernelModuleExists { modinfo $1 > /dev/null 2>&1 ; return $? ;}
+
+  function kvmVendorLoaded { # Boolean return on whether vendor kvm modules are loaded
+    lsmod|grep -qs '^kvm_' ; return $?
+  }
+
+  function checkDmesgKvm { # Try to throw a descriptive error if everything else has gone wrong.
+    sudo dmesg -t |grep 'kvm' | sort -u | while read dmesgLine
+    do
+      case "$dmesgLine" in
+        *"no hardware support for"*)
+          if [[ ${hostCpuCheck} == "unknown" ]]
+          then
+            printer "${colors[red]}Host CPU doesn't seem to be AMD or Intel and the 'kvm' module claims your CPU or Motherboard doesn't have hardware support for virtualization."
+          else
+            printer "${colors[red]}Host detected as ${hostCpuCheck} but the ${KvmVendorModule} kernel module doesn't believe there's hardware support."
+          fi
+            printer "${colors[red]}If this isn't expected for your hardware please check your bios for any virtualization-relevant flags to enable."
+            printer "${colors[red]}If the issue persists or the script has gotten something wrong feel free to make an issue on github to look into this."
+          return 1
+      ;;
+        *"disabled by bios"*)
+          printer "${colors[red]}Host CPU detected as ${hostCpuCheck} but the ${KvmVendorModule} kernel module believes you haven't enabled all relevant support features in your bios"
+          printer "${colors[red]}Visit your bios and enable the relevant ${hostVirtualizationBiosFlag} flags before trying again."
+          return 1
+      ;;
+      esac
+    done
+  }
+
+  function tryLoadKvmVendor { # Try to load the appropriate vendor module, unloading it first if present to potentially produce useful dmesg output.
+    case $(grep -m1 'model name' /proc/cpuinfo | tr '[:upper:]' '[:lower:]') in
+      *amd*)
+        hostCpuCheck=amd
+        KvmVendorModule=kvm_amd
+        hostVirtualizationBiosFlag="AMD-Vi (Sometimes labeled: 'SVM Mode / IOMMU Mode / IOMMU')"
+      ;;
+      *intel*)
+        hostCpuCheck=intel
+        KvmVendorModule=kvm_intel
+        hostVirtualizationBiosFlag="VT-d (Intel Virtualization Technology)"
+      ;;
+      *)
+        echo "Not sure what CPU vendor you're with. Will try reprobing the 'kvm' module."
+        hostCpuCheck=unknown
+        KvmVendorModule=kvm
+      ;;
+    esac
+      
+    if kernelModuleExists ${KvmVendorModule}
+    then
+      printer "Attempting modprobe of ${KvmVendorModule}..."
+      sudo modprobe ${KvmVendorModule}
+      if [ ! -e /dev/kvm ] # If still missing: check diagnostics and give up.
+      then
+        ((++expectLaunchIssue))
+        if checkDmesgKvm
+        then
+          printer "${colors[red]}Something else went wrong trying to get the kvm-relevant drivers active." 
+          printer "${colors[red]}Please check your dmesg output for more information on what specifically went wrong for kvm. (e.g. 'dmesg -t|grep kvm | sort -u')"
+          ((++expectLaunchIssue))
+          return 1
+        else
+          : #((++expectLaunchIssue)) # Bad 
+        fi
+      fi
+    else
+      printer "${colors[red]}The ${KvmVendorModule} module isn't present. This host can't use KVM without the relevant modules available."
+      ((++expectLaunchIssue))
+      return 1
+    fi
+  }
+
+    # Basic virtualization check
+  if ! cpuSupportsVirtualization
+  then
+    printer "${colors[red]}CPU doesn't claim to support virtualization at all [No feature flag for 'vmx', 'svm' or '0xc0f']."
+    printer "${colors[red]}This may be a result of bios settings or lack of hardware support."
+  fi
+
+    # Continued poking around for issues
+  if [ -e /dev/kvm ] && [ ! -c /dev/kvm ] # Theoretical invalid device file catch
+  then
+    printer "${colors[red]}Path /dev/kvm exists but is not in its expected character-device file type."
+    printer "${colors[red]}This must be manually resolved."
+    ((++expectLaunchIssue))
+  elif [ ! -e /dev/kvm ] # If kvm devicefile missing or loaded with troubled kvm_amd / kvm_intel module, try reloading.
+  then
+    printer "${colors[yellow]}kvm module doesn't appear to be active. Finding cause..."
+    tryLoadKvmVendor
+    [ -e /dev/kvm ] && printer "${colors[blue]}KVM ready."
+  fi 
+}
+
+
 #    _
 #   / \   _ __ __ _ ___
 #  / _ \ | '__/ _` / __|
@@ -1337,6 +1437,8 @@ then
   coreArgs+=" -nographic -vga none"
 fi
 
+  # Check KVM is ready
+! isDry && [[ "$coreArgs" == *"accel=kvm"* ]] && checkKvmHypervisorEligibility
 
   # Final check for any catches if we'd rather not start qemu in this state.
 if [ -n "$expectLaunchIssue" ] && ! isDry
@@ -1373,7 +1475,7 @@ then
 else
   sudo prlimit --pid $$ --memlock=unlimited:unlimited
   set -m # Allow scripted bash job controls (fg, bg, etc)
-  echo -ne "Starting qemu now.\n\n"
+  echo -ne "Starting qemu...\n\n"
   eval "qemu-system-x86_64 ${coreArgs} ${hugeArgs} ${networkArgs} ${usbArgs} ${pciArgs} ${lgArgs} ${kernelArgs} ${TPMArgs} ${extras} &"
   qemuPid=$!
   echo qemu pid is $qemuPid
