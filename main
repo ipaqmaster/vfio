@@ -280,49 +280,50 @@ function bridger {
       intExists=0
     fi
 
-    # If a host interface were specified, steal the last 3 mac octets for identification,
-    # Otherwise try to steal last 3 octets from the bridge interface mac instead.
-
-  # Build VM's mac address from above
-  if [ -n "$int" ]
-  then
-      # From specified int
-    tapMAC="$(buildGuestMac $(etherGrep $int))"
-  elif [ -n "$br" ]
-  then
-      # From specified bridge
-    tapMAC="$(buildGuestMac $(etherGrep $br))"
-  else
-      # From random generation otherwise
-    tapMAC="$(buildGuestMac)"
-  fi
-
-    if [ -n "${br}" ] && [ -d "/sys/class/net/${br}" ]
+   if [ -n "${br}" ] && [ -d "/sys/class/net/${br}" ]
     then
       if grep -qs -E '^up$' /sys/class/net/${br}/operstate
       then
         printer "${br} exists and is up, will attach ${tap} to that."
         bridgePreexists=1
-      elif [ -n "$int" ]
+      elif [ -n "${int}" ]
       then
-        printer "${colors[green]}bridge $br is down and a host int has been specified, will create $br for this session and attach $int + $tap to it."
+        printer "${colors[green]}bridge ${br} is down and a host int has been specified, will create ${br} for this session and attach ${int} + ${tap} to it."
         bridgePreexists=0
       fi
     else
-      printer "${colors[red]}bridge $br not found. No host int specified to bridge guest with.\nRefusing to create a bridge for the guest without a host interface." "fault"
+      printer "${colors[red]}bridge ${br} not found. No host int specified to bridge guest with.\nRefusing to create a bridge for the guest without a host interface." "fault"
       brStartFault=1
-      exit 1 # Replace with expectLaunchIssue
+      ((++expectLaunchIssue))
+      return 1 # Proceed no further
     fi
 
-    if  [ -n "$br" ] && [ $bridgePreexists -eq 0 ]
+    # If a host interface were specified, steal the last 3 mac octets for identification,
+    # Otherwise try to steal last 3 octets from the bridge interface mac instead.
+
+  # Build VM's mac address from above
+  if [ -n "${int}" ]
+  then
+      # From specified int
+    tapMAC="$(buildGuestMac $(etherGrep ${int}))"
+  elif [ -n "${br}" ]
+  then
+      # From specified bridge
+    tapMAC="$(buildGuestMac $(etherGrep ${br}))"
+  else
+      # From random generation otherwise
+    tapMAC="$(buildGuestMac)"
+  fi
+ 
+    if  [ -n "${br}" ] && [ ${bridgePreexists} -eq 0 ]
     then
       if systemctl is-active NetworkManager >/dev/null ; then sudo systemctl stop NetworkManager ; export nm="seen" ; fi
         # Create the bridge,        bring it up.
-      sudo ip link add $br type bridge ; sudo ip link set $br up
+      sudo ip link add ${br} type bridge ; sudo ip link set ${br} up
         # Remove IPs from int,  attach int to bridge,              give bridge int's mac,                bring int up.
       if [ $intExists = 1 ]
       then
-        sudo ip addr flush dev $int && sudo ip link set dev $int master $br && sudo ip link set dev $br address $(etherGrep $int)
+        sudo ip addr flush dev $int && sudo ip link set dev $int master ${br} && sudo ip link set dev ${br} address $(etherGrep $int)
         sudo ip link set $int up
       fi
     fi
@@ -332,7 +333,7 @@ function bridger {
 
     if [ -n "$br" ]
     then
-      sudo ip link set $tap master $br && sudo ip link set $tap up
+      sudo ip link set $tap master ${br} && sudo ip link set $tap up
       printer '------------------'
       printer "Bridge details:"
       printer "\t$br:"
@@ -351,7 +352,7 @@ function bridger {
       if [ $bridgePreexists -eq 0 ] && [ -n "$int" ]
       then
         echo "Running dhclient on $br..."
-        sudo dhclient -v $br 2>&1|grep '^DHCPACK'
+        sudo dhclient -v ${br} 2>&1|grep '^DHCPACK'
       else
         printer "${colors[green]}Bridge already existed, not running dhclient -r on it."
       fi
@@ -365,9 +366,9 @@ function bridger {
     if [ -n "$br" ] && [ $bridgePreexists -eq 0 ]
     then
       printer "${colors[yellow]}Undoing our bridge..."
-      dhclient -r $br >/dev/null 2>&1 && printer "${colors[green]}dhcp lease released and dhclient process ended..."
+      dhclient -r ${br} >/dev/null 2>&1 && printer "${colors[green]}dhcp lease released and dhclient process ended..."
       for i in $tap $br; do sudo ip link set $i down ; sudo ip link del $i; done # Remove the tap and bridge
-      if ! ip link show $br >/dev/null 2>&1; then printer "${colors[green]}Bridge removed."; fi
+      if ! ip link show ${br} >/dev/null 2>&1; then printer "${colors[green]}Bridge removed."; fi
     else
       printer "${colors[green]}We only used $tap on an existing bridge this run, removing $tap."
       for i in $tap ; do sudo ip link set $i down ; sudo ip link del $i; done && printer "${colors[green]}$tap removed." # Remove the tap
@@ -1377,9 +1378,11 @@ fi
 if [[ -n "$bridgeArgs" ]]
 then
   # Make the bridge
-  bridger start $bridgeArgs
-  networkArgs="-netdev tap,id=vmnet,ifname=$tap,script=no,downscript=no" # Bridge
-  printer "${colors[green]}-bridge\t\tspecified, VM will be bridged to the host with a tap adapter."
+  if bridger start $bridgeArgs 
+  then
+    networkArgs="-netdev tap,id=vmnet,ifname=$tap,script=no,downscript=no" # Bridge
+    printer "${colors[green]}-bridge\t\tspecified, VM will be bridged to the host with a tap adapter."
+  fi
 elif [ -n "$noNet" ]
 then
   networkArgs="-nic none"
