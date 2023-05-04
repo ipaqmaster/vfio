@@ -297,21 +297,21 @@ function bridger {
     tapMAC="$(buildGuestMac)"
   fi
 
-    if [ -n "$br" ]
+    if [ -n "${br}" ] && [ -d "/sys/class/net/${br}" ]
     then
-      if grep -qs -E '^up$' /sys/class/net/$br/operstate
+      if grep -qs -E '^up$' /sys/class/net/${br}/operstate
       then
-        printer "$br exists and is up, will attach $tap to that."
+        printer "${br} exists and is up, will attach ${tap} to that."
         bridgePreexists=1
-      elif ! grep -qs -E '^up$' /sys/class/net/$br/operstate && [ -n "$int" ]
+      elif [ -n "$int" ]
       then
-        printer "${colors[green]}bridge $br not found while host int specified, will create $br for this session and attach $int + $tap to it."
+        printer "${colors[green]}bridge $br is down and a host int has been specified, will create $br for this session and attach $int + $tap to it."
         bridgePreexists=0
-      else
-        printer "${colors[red]}bridge $br not found but no host int specified to bridge VM with. Refusing to create bridge with no host interface." "fault"
-        brStartFault=1
-        exit 1
       fi
+    else
+      printer "${colors[red]}bridge $br not found. No host int specified to bridge guest with.\nRefusing to create a bridge for the guest without a host interface." "fault"
+      brStartFault=1
+      exit 1 # Replace with expectLaunchIssue
     fi
 
     if  [ -n "$br" ] && [ $bridgePreexists -eq 0 ]
