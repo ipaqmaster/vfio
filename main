@@ -878,6 +878,9 @@ do
       extras="$2"
       shift
     ;;
+    -force)
+      FORCE=1
+    ;;
     -hostaudio)
       hostAudio="1"
     ;;
@@ -1449,7 +1452,12 @@ then
   printer "" "fault"
   printer "${colors[red]}Experienced $expectLaunchIssue issues" "fault"
   printer "${colors[red]}Something went wrong above, refusing to run.\nPlease see above script output for a reason." "fault"
-  exit 1
+  if [ -z "$FORCE" ]
+  then
+    exit 1
+  else
+    printer "${colors[yellow]}-force specified... dazed and confused but trying to continue..." fault
+  fi
 fi
 
 
