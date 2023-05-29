@@ -1281,9 +1281,9 @@ if [ -z "${accel}" ]
 then
   if [ -n "${WINDOWS}" ]
   then
-    machineArgs+=" -accel=whpx"
+    machineArgs+=" -accel whpx"
   else
-    machineArgs+=" -accel=kvm"
+    machineArgs+=" -accel kvm"
   fi
 elif [ "${accel}" == "none" ]
 then
@@ -1293,7 +1293,7 @@ then
   if grep -qs "${accel}" <<< "${accelList}"
   then
     printer "${colors[green]}-accel\t\tUsing ${accel} acceleration for this run"
-    machineArgs+=" -accel=${accel}"
+    machineArgs+=" -accel ${accel}"
   else
     printer "${colors[red]}-accel\t\tQemu doesn't seem to support \"${accel}\" acceleration." fault
     printer "${colors[red]}$( sed -e 's/^/\t\t/g' <<< ${accelList})"
@@ -1489,7 +1489,7 @@ then
 fi
 
   # Check KVM is ready
-! isDry && [[ "$machineArgs" == *"accel=kvm"* ]] && checkKvmHypervisorEligibility
+! isDry && [[ "$machineArgs" == *"accel kvm"* ]] && checkKvmHypervisorEligibility
 
   # Final check for any catches if we'd rather not start qemu in this state.
 if [ -n "$expectLaunchIssue" ] && ! isDry
