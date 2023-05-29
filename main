@@ -1005,6 +1005,14 @@ done
 #                                |___/
 checkDependency qemu-system-x86_64 chrt taskset
 
+# Check if this is a Windows host
+
+if [[ "$(uname -s)" = *_NT* ]]
+then
+  WINDOWS=1
+  printer "${colors[yellow]}Use of this script on Windows isn't supported but can be used to run basic qemu VMs. Continue at own risk."
+fi
+
 if isDry
 then
   printer "${colors[magenta]}This is a DRY run. Please specify ${colors[red]}-run${colors[magenta]} to actually run"
