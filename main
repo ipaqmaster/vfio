@@ -1259,8 +1259,8 @@ cpuArgs="-cpu host,kvm=on,topoext=on"
 
 if [ -n "$hyperv" ]
 then
-  printer "${colors[green]}-hyperv\t\tspecified, HyperV Enlightenments will be enabled for this run."
-  cpuArgs+=",hv-frequencies,hv-relaxed,hv-reset,hv-runtime,hv-spinlocks=0x1fff,hv-stimer,hv-synic,hv-time,hv-vapic,hv-vpindex"
+  printer "${colors[green]}-hyperv\t\tspecified, HyperV Enlightenments will be enabled with hv-passthrough,hv-enforce-cpuid for this run."
+  cpuArgs+=",hv-passthrough,hv-enforce-cpuid"
 fi
 
 smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
