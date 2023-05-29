@@ -92,6 +92,11 @@ In general this script has been very useful in my tinkering even outside VFIO ga
 
 ## General usage arguments
 
+`-accel kvm tcg hax whpx none / -noaccel`
+  Set a virtualization accelerator or disable using one entirely via the 'none' argument or '-noaccel'
+  Useful for disabling KVM acceleration or using a custom accelerator of choice.
+  By default uses kvm on Linux or whpx on Windows
+
 `-avoidVirtio` / `-noVirtio`
 
   If set, tries to pick more traditional QEMU devices for the best compatibility with a booting guest.

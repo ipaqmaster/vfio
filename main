@@ -37,6 +37,10 @@ function printHelp {
 
   printer "Valid example arguments: [ ${colors[blue]}There's more in the README.md! ${colors[none]}]\n"
 
+  printer "  ${colors[cyan]}-accel kvm/tcg/hax/whpx/none / -noaccel"
+  printer "    Set a virtualization accelerator or disable using one entirely via the 'none' argument or '-noaccel'"
+  printer "    Useful for disabling KVM acceleration or using a custom accelerator of choice."
+  printer "    By default uses kvm on Linux or whpx on Windows."
 
   printer "  ${colors[cyan]}-avoidVirtio / -novirtio"
   printer "    Intentionally avoid virtio qemu hardware."
@@ -845,6 +849,10 @@ if [[ -z "$@" ]] ; then echo "No args seen. Printing help" ; printHelp ; fi
 while [ $# -gt 0 ]
 do
   case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
+    -accel)
+      accel="$2"
+      shift
+    ;;
     -append|-cmdline)
       append="$2"
       shift
@@ -935,6 +943,9 @@ do
     -memory|-mem|-m)
       memoryArgs="$2"
       shift
+    ;;
+    -noaccel)
+      accel=none
     ;;
     -nocolor|-nocolors|-nocolor|-nocolors)
       unset colors # Pretty simple color killer.
@@ -1262,7 +1273,33 @@ fi
 
   # Put core QEMU arguments together
 
-machineArgs="-machine q35,accel=kvm,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
+machineArgs="-machine q35,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
+
+  # Determine acceleration, default to best (kvm/whpx) 
+accelList="$(qemu-system-x86_64 -accel help | tr -d '\r')"
+if [ -z "${accel}" ]
+then
+  if [ -n "${WINDOWS}" ]
+  then
+    machineArgs+=" -accel=whpx"
+  else
+    machineArgs+=" -accel=kvm"
+  fi
+elif [ "${accel}" == "none" ]
+then
+  printer "${colors[green]}-accel\t\tAcceleration disabled for this run."
+elif [ -n "${accel}" ]
+then
+  if grep -qs "${accel}" <<< "${accelList}"
+  then
+    printer "${colors[green]}-accel\t\tUsing ${accel} acceleration for this run"
+    machineArgs+=" -accel=${accel}"
+  else
+    printer "${colors[red]}-accel\t\tQemu doesn't seem to support \"${accel}\" acceleration." fault
+    printer "${colors[red]}$( sed -e 's/^/\t\t/g' <<< ${accelList})"
+    ((++expectLaunchIssue))
+  fi
+fi
 cpuArgs="-cpu host,kvm=on,topoext=on"
 
 if [ -n "$hyperv" ]
