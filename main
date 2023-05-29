@@ -1117,7 +1117,7 @@ if [[ -z "$biosPath" ]]
 then
   defaultBiosPath="/usr/share/ovmf/x64/OVMF_CODE.fd"
   defaultSecbootBiosPath="/usr/share/ovmf/x64/OVMF_CODE.secboot.4m.fd"
-  [ -n "$win11" ] && defaultBiosPath="$defaultSecbootBiosPath"
+  [ -n "$secureBoot" ] && defaultBiosPath="$defaultSecbootBiosPath"
   if [[ ! -f "$defaultBiosPath" ]]
   then
     printer "${colors[red]}-bios\t\tnot specified and couldn't find default '$defaultBiosPath'.\n\t\tPlease install OVMF or set your .fd file with the -bios argument"
