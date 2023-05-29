@@ -1309,7 +1309,7 @@ then
 fi
 
 smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
-coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
+coreArgs="$machineArgs -m $guestmemoryMB $cpuArgs $smpArgs"
 coreArgs+=" -name $(basename $0),debug-threads=on"
 coreArgs+=" -drive if=pflash,format=raw,unit=0,readonly=on,file=$biosPath"
 [ -n "$biosVars" ] && coreArgs+=" -drive if=pflash,format=raw,unit=1,file=$biosVars"
@@ -1489,7 +1489,7 @@ then
 fi
 
   # Check KVM is ready
-! isDry && [[ "$coreArgs" == *"accel=kvm"* ]] && checkKvmHypervisorEligibility
+! isDry && [[ "$machineArgs" == *"accel=kvm"* ]] && checkKvmHypervisorEligibility
 
   # Final check for any catches if we'd rather not start qemu in this state.
 if [ -n "$expectLaunchIssue" ] && ! isDry
