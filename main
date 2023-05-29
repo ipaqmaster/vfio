@@ -1298,7 +1298,7 @@ then
   printer "${colors[green]}-accel\t\tAcceleration disabled for this run."
 elif [ -n "${accel}" ]
 then
-  if grep -qs "${accel}" <<< "${accelList}"
+  if grep -Eqs "^${accel}$" <<< "${accelList}"
   then
     printer "${colors[green]}-accel\t\tUsing ${accel} acceleration for this run"
     machineArgs+=" -accel ${accel}"
