@@ -1275,6 +1275,14 @@ fi
 
 machineArgs="-machine q35,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
 
+  # Determine guest CPU type
+if [ -z "${WINDOWS}" ]
+then
+  cpuType="host" # Use host passthrough on Linux
+else
+  cpuType="max"  # QEMU for Win doesn't support 'host' passthrough so just do our best on that platform.
+fi
+
   # Determine acceleration, default to best (kvm/whpx) 
 accelList="$(qemu-system-x86_64 -accel help | tr -d '\r')"
 if [ -z "${accel}" ]
@@ -1300,7 +1308,8 @@ then
     ((++expectLaunchIssue))
   fi
 fi
-cpuArgs="-cpu host,kvm=on,topoext=on"
+
+cpuArgs="-cpu ${cpuType},topoext=on"
 
 if [ -n "$hyperv" ]
 then
