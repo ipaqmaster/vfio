@@ -1289,7 +1289,7 @@ if [ -z "${accel}" ]
 then
   if [ -n "${WINDOWS}" ]
   then
-    machineArgs+=" -accel whpx"
+    machineArgs+=" -accel tcg"
   else
     machineArgs+=" -accel kvm"
   fi
