@@ -145,7 +145,7 @@ function printHelp {
 }
 
 function permissionsManager { # chown's things before qemu starts, but also tries to return them in the end.
-  if isDry ; then return ; fi # Do nothing when dry.
+  isDry && return # Noop on dry runs
 
   if ! declare -p Permissions >/dev/null 2>&1 ; then declare -g -A Permissions ; fi # Check array is ready for use.
 
