@@ -185,6 +185,10 @@ Optionally pass a kernel file either self compiled or straight out of /boot to t
 
    An optional bios path. If not set the script will try `/usr/share/ovmf/x64/OVMF_CODE.fd` if available.
 
+`-noBios` / `-legacy` / `-legacyboot`
+
+   Skip adding a pflash device for UEFI booting. This will boot in qemu's default BIOS mode instead of UEFI.
+
 `-biosvars /tmp/OVMF_VARS.4m.fd`
    Manually specify a bios variables file for qemu to use. Needed for Secureboot / Win11.
    You must copy the default OVMF_VARS.fd on your system to a new unique path for your VM OS.

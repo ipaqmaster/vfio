@@ -46,6 +46,9 @@ function printHelp {
   printer "  ${colors[cyan]}-bios /usr/share/ovmf/x64/OVMF_CODE.secboot.4m.fd"
   printer "    Manually specify a bios for qemu to use. Required if the script cannot automatically find one."
 
+  printer "  ${colors[cyan]}-noBios / -legacy / -legacyboot"
+  printer "    Skip adding a pflash device for UEFI booting. This will boot in qemu's default BIOS mode instead of UEFI."
+
   printer "  ${colors[cyan]}-biosvars /tmp/OVMF_VARS.4m.fd"
   printer "    Manually specify a bios variables file for qemu to use. Needed for Secureboot / Win11."
   printer "    You must copy the default OVMF_VARS.fd on your system to a new unique path for your VM OS."
@@ -936,6 +939,9 @@ do
       memoryArgs="$2"
       shift
     ;;
+    -nobios|-legacy|-legacyboot)
+      noBios=1
+    ;;
     -nocolor|-nocolors|-nocolor|-nocolors)
       unset colors # Pretty simple color killer.
     ;;
@@ -1130,7 +1136,10 @@ else
   if [ ! -f "$biosPath" ] ; then printer "${colors[red]}-bios\t\tdoesn't appear to exist: ${colors[none]}\t${biosPath}" ; ((++expectLaunchIssue)) ; fi
 fi
 
-if [ -n "$biosVars" ]
+if [ -n "$noBios" ]
+then
+    printer "${colors[green]}-nobios\t\tspecified. Booting standard non-UEFI."
+elif [ -n "$biosVars" ]
 then
   if [ ! -f "$biosVars" ]
   then
@@ -1266,7 +1275,7 @@ fi
 smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
 coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
 coreArgs+=" -name $(basename $0),debug-threads=on"
-coreArgs+=" -drive if=pflash,format=raw,unit=0,readonly=on,file=$biosPath"
+[ -z "$noBios" ]   && coreArgs+=" -drive if=pflash,format=raw,unit=0,readonly=on,file=$biosPath"
 [ -n "$biosVars" ] && coreArgs+=" -drive if=pflash,format=raw,unit=1,file=$biosVars"
 coreArgs+=" -serial mon:stdio" # Add a qemu serial device
 coreArgs+=" -nodefaults"       # Don't use any default devices
