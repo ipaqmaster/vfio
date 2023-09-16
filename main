@@ -629,8 +629,24 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   if [[ $var == *"vfiobind"* ]] ; then echo -ne "Here are the completed pciArgs:\n    $pciArgs"; fi
 }
 
-function checkVcpuCount {
-  for child in /proc/$1/task/* ; do if grep -q CPU $child/comm; then echo $(basename $child) ; fi ; done
+function getVcpus {
+  for child in /proc/$1/task/*
+  do
+    if grep -q CPU $child/comm
+    then
+      echo $(basename $child)
+      fi
+    done
+}
+
+function getVcpuCount { 
+  if [ -z "$1" ]
+  then
+    printer "${FUNCNAME[0]} Needs qemu pid as argument." >&2
+    return 1 
+  fi
+
+  getVcpus $1 | wc -l
 }
 
 function pinVcpus {
@@ -638,10 +654,10 @@ function pinVcpus {
   then
       # First, this function will wait for all threads to be accounted for.
       expectedVcpus=$(echo ${vcpuArray[@]} | wc -w)
-      timeout=15 ; timer=0 ; foundVcpus=$(checkVcpuCount $1| wc -l)
+      timeout=15 ; timer=0 ; foundVcpus=$(getVcpuCount)
       while [ $foundVcpus -lt $expectedVcpus ] && [ $timer -lt $timeout ]
       do
-        foundVcpus=$(checkVcpuCount $1| wc -l)
+        foundVcpus=$(getVcpus $1| wc -l)
         ((++timer))
         printer "${colors[yellow]}Waiting for vcpus to wake up... $foundVcpus found." >&2
         sleep 1
