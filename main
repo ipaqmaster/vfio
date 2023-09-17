@@ -659,7 +659,7 @@ function pinVcpus {
   then
       # First, this function will wait for all threads to be accounted for.
       expectedVcpus=$(echo ${vcpuArray[@]} | wc -w)
-      timeout=15 ; timer=0 ; foundVcpus=$(getVcpuCount)
+      timeout=15 ; timer=0 ; foundVcpus=$(getVcpuCount $1)
       while [ $foundVcpus -lt $expectedVcpus ] && [ $timer -lt $timeout ]
       do
         foundVcpus=$(getVcpus $1| wc -l)
