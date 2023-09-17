@@ -629,6 +629,11 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
   if [[ $var == *"vfiobind"* ]] ; then echo -ne "Here are the completed pciArgs:\n    $pciArgs"; fi
 }
 
+function setPidPrio {
+  # Sets a given pid argument to 'First-in First-out' scheduling policy and priority 20.
+  sudo chrt -f -p 20 $1 > /dev/null
+}
+
 function getVcpus {
   for child in /proc/$1/task/*
   do
@@ -671,7 +676,8 @@ function pinVcpus {
     do
       printer "${colors[green]}Pinning vCPU $vcpuPosition to host core ${vcpuArray[$vcpuPosition]}" >&2
       sudo taskset -cp ${vcpuArray[$vcpuPosition]} $vcpuPid >/dev/null # Pin this vcpu to a host thread.
-      sudo chrt -p -f 20 $vcpuPid >/dev/null # Use FIFO scheduling on qemu vcpu threads.
+      setPidPrio $vcpuPid
+      #sudo chrt -f -p 20 $vcpuPid >/dev/null # Use FIFO scheduling on qemu vcpu threads.
       ((++vcpuPosition))
 
     done <<< "$threadPinList"
