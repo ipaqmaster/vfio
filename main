@@ -634,43 +634,47 @@ function setPidPrio {
   sudo chrt -f -p 20 $1 > /dev/null
 }
 
-function getVcpus {
-  for child in /proc/$1/task/*
-  do
-    if grep -q CPU $child/comm
-    then
-      echo $(basename $child)
-      fi
-    done
-}
-
-function getVcpuCount { 
+function getQemuThreads {
   if [ -z "$1" ]
   then
-    printer "${FUNCNAME[0]} Needs qemu pid as argument." >&2
-    return 1 
+    printer "${FUNCNAME[0]} Needs a qemu pid as argument." >&2
+    printer "\tAlso accepts second argument as thread filter (e.g. 'CPU' or 'IO')" >&2
+    return 1
   fi
 
-  getVcpus $1 | wc -l
+  for child in /proc/$1/task/*
+  do
+    threadName="$(cat $child/comm)"
+
+    if [ -n "$2" ] # Omit thread if match desired.
+    then
+      if ! [[ "$threadName" =~ "$2" ]]
+      then
+        continue
+      fi
+    fi
+
+    threadPid="$(basename $child)"
+    echo "$threadPid $threadName"
+
+  done
+
 }
 
 function pinVcpus {
   if [ -d /proc/$1 ]
   then
       # First, this function will wait for all threads to be accounted for.
-      expectedVcpus=$(echo ${vcpuArray[@]} | wc -w)
-      timeout=15 ; timer=0 ; foundVcpus=$(getVcpuCount $1)
-      while [ $foundVcpus -lt $expectedVcpus ] && [ $timer -lt $timeout ]
+      timeout=15 ; timer=0
+      while [ $(getQemuThreads $1 CPU | wc -l) -lt ${#vcpuArray[@]} ] && [ $timer -lt $timeout ]
       do
-        foundVcpus=$(getVcpus $1| wc -l)
         ((++timer))
-        printer "${colors[yellow]}Waiting for vcpus to wake up... $foundVcpus found." >&2
+        printer "${colors[yellow]}Waiting for vcpus to wake up... $(getQemuThreads $1 CPU | wc -l) found." >&2
         sleep 1
       done
-    if [ $timer -eq $timeout ] ; then printer "${colors[red]}The vcpus did not wake up in time. This will happen on large qemu launches or slower systems but pinning failed." "fault" >&2 ; fi
+    if [ $timer -eq $timeout ] ; then printer "${colors[red]}Was unable to see all vCPU's appear under the qemu task in time. This can happen on large launches or slower systems." "fault" >&2 ; fi
+    printer "Successfully found ${#vcpuArray[@]} vCPUs on the guest." >&2
 
-    threadPinList=$(for child in /proc/$1/task/* ; do if grep -q CPU $child/comm; then echo $(basename $child) ; fi ; done)
-    printer "Successfully found $(wc -l <<< $threadPinList) vCPUs on the guest." >&2
     vcpuPosition=0
     while read vcpuPid
     do
@@ -680,7 +684,7 @@ function pinVcpus {
       #sudo chrt -f -p 20 $vcpuPid >/dev/null # Use FIFO scheduling on qemu vcpu threads.
       ((++vcpuPosition))
 
-    done <<< "$threadPinList"
+    done <<< "$(getQemuThreads $1 CPU | cut -d' ' -f1)"
   fi
 }
 
@@ -976,6 +980,11 @@ do
       shift
     ;;
     -pinvcpus)
+      if ! [[ "$2" =~ ^([0-9]|,)+$ ]]
+      then
+        echo "This script's -pinvcpus flag only accepts comma delimited threads at the moment such as: 0,1,2,3,4,5,6, or 0,2,4,8 -- Sorry!"
+        exit 1
+      fi
       vcpuThreads="$2"
       shift
     ;;
@@ -1101,26 +1110,29 @@ else
   hostCores=${hostTotalThreads}
 fi
 
-if [ -z "$vcpuThreads" ] # If no vcpu pinning specified fallback to half the host CPU unpinned.
+if [ -n "$vcpuThreads" ] # If no vcpu pinning specified fallback to half the host CPU unpinned.
 then
+  printer "${colors[green]}-pinvcpus\tspecified, Guest will run on host CPU threads:${colors[none]}\t$vcpuThreads"
+  # Make an array for later reference
+  OLDIFS="$IFS" ; IFS=', ' vcpuArray=($(echo $vcpuThreads)) ; IFS="$OLDIFS"
+  vcpuCount=$(wc -w <<<${vcpuArray[*]})
+    # Check if specified -pinvcpus thread count is divisible by 2. Use hyperthreading/smt if supported
+
+  if (( $vcpuCount % 2 == 0 )) && hostIsHyperthreaded
+  then
+    guestCores=$(( vcpuCount / 2 ))
+    guestThreads=2
+  else
+    guestCores=$vcpuCount
+    guestThreads=1
+  fi
+
+  vcpuPinningAfterQemuStart=1
+else
   guestCores=$(((${hostCores} / 2)))
   guestTotalThreadCount=$(((${hostTotalThreads} / 2)))
   if hostIsHyperthreaded; then guestThreads=2; else guestThreads=1; fi # For qemu's smt,threads= argument
   printer "${colors[yellow]}-pinvcpus\tnot specified, Guest will get half host's core total as vcpus (No pinning):\t${colors[none]} ${guestCores} $(hostIsHyperthreaded && printer "hyperthreaded")vcpu's (${hostCores}/2) $(hostIsHyperthreaded && printer "for a total of ${guestTotalThreadCount} vcpu threads (${hostTotalThreads}/2).")"
-
-else
-  if grep -qE '^([0-9]|,)+$' <<< $vcpuThreads
-  then
-    printer "${colors[green]}-pinvcpus\tspecified, Guest will run on host CPU threads:${colors[none]}\t$vcpuThreads"
-    # Make an array for later reference
-    OLDIFS="$IFS" ; IFS=', ' vcpuArray=($(echo $vcpuThreads)) ; IFS="$OLDIFS"
-    vcpuCount=$(wc -w <<<${vcpuArray[*]})
-      # Check if specified -pinvcpus thread count is divisible by 2. Use hyperthreading/smt if supported
-    if (( $vcpuCount % 2 == 0 )) && hostIsHyperthreaded ; then guestCores=$(( vcpuCount / 2 )) ; guestThreads=2; else guestCores=$vcpuCount ; guestThreads=1 ; fi
-  vcpuPinningAfterQemuStart=1
-  else
-    echo "This script's -pinvcpus flag only accepts comma delimited threads at the moment such as: 0,1,2,3,4,5,6, or 0,2,4,8 -- Sorry!"
-  fi
 fi
 
   # Determine guest memory
