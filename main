@@ -1274,7 +1274,13 @@ then
       printer "\t\t${colors[green]}Hugepages already preallocated with enough free for guest, using those."
     else
       echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null && printer "\t\tMemory cache dropped for hugepages..."
-      echo -ne "\t\tRunning compact_memory... " ; echo 1 | sudo tee /proc/sys/vm/compact_memory >/dev/null && printer "${colors[green]}OK."
+      if printf "6.3.1\n$(uname -r |grep -oPm1 '^([0-9]+|\.){5}')" | sort -V -C && [ -d /sys/module/zfs ]
+      then
+        echo -e "\t\t${colors[yellow]}Skipping compact_memory to avoid crash on kernel >=6.3.1 with ZFS."
+        echo -e "\t\t${colors[yellow]}See bug: https://github.com/openzfs/zfs/issues/15140"
+      else
+        echo -ne "\t\tRunning compact_memory... " ; echo 1 | sudo tee /proc/sys/vm/compact_memory >/dev/null && printer "${colors[green]}OK."
+      fi
       echo "$pagesRequired" | writeHugeInfo ${hugepageSizeKB} nr_hugepages ; hugepagesSelfAllocated=1
       printer "\t\tGiving hugepages a moment to allocate."
       while [ $(readHugeInfo ${hugepageSizeKB} nr_hugepages) -lt $pagesRequired ]
