@@ -58,8 +58,14 @@ function printHelp {
   printer "    Added to work around kernel bug 216475 temporarily (https://bugzilla.kernel.org/show_bug.cgi?id=216475)\n"
 
   printer "  ${colors[cyan]}-image /dev/zvol/zpool/windows"
+  printer "    A file or blockdevice to be made available to the guest. Can be specified multiple times."
   printer "  ${colors[cyan]}-imageformat/${colors[cyan]}-format [raw / qcow / vdi / etc]"
-  printer "    A file or blockdevice to give the guest. Complete with it's [Qemu recognised] format\n"
+  printer "    A QEMU-recognised disk format. Must be specified after each invocation of -image."
+  printer "    Can be omitted for virtual disk files as QEMU will guess the format. But it won't guess 'raw'"
+  printer "  ${colors[cyan]}-nvme"
+  printer "    Present storage to the guest virtualizing NVMe rather than using virtio-blk-pci or ide-hd (with -avoidVirtio)."
+  printer "    This can prove useful when booting a physical installation on NVMe which lacks other storage drivers in their bootloader"
+  printer "    And general permanent P2V scenarios. For long term usage I strongly recommend installing the virtio driver on the guest instead.\n"
 
   printer "  ${colors[cyan]}-cmdline console=ttyS0 root=/dev/vda1"
   printer "  ${colors[cyan]}-initrd /boot/initramfs.img"
@@ -974,6 +980,11 @@ do
     -nonet)
       noNet=1
     ;;
+    -nvme)
+      nvme=1
+    ;;
+    -pci)
+    ;;
     -pci)
       checkIOMMU
       pciREGEX="$2"
@@ -1090,6 +1101,11 @@ deviceTypes[net]='e1000e'
 deviceTypes[scsiController]='ide-hd'
 deviceTypes[vga]='std'
 deviceTypes[serial]='pci-serial'
+fi
+
+if [ -n "$nvme" ]
+then
+  deviceTypes[scsiController]='nvme'
 fi
 
 if [ -n "$tpmMode" ]
@@ -1349,23 +1365,66 @@ fi
 if [[ -n "${!disks[@]}" ]]
 then
   printer "${colors[green]}-image(s)\tspecified, using virtual disk(s) this run:"
+  printer "\t\t${colors[blue]}Driver: ${colors[none]}${deviceTypes[scsiController]}"
 else
   printer "${colors[yellow]}-image\t\tnot specified, This VM will run without any virtual disks."
 fi
 
+# Enumerate disks
 for disk in ${!disks[@]}
 do
   ((++ioCounter))
-  if [ -n "${disks[$disk]}" ]; then diskFormat=",format=${disks[$disk]}"; else unset diskFormat ; fi
-  printer "\t\t${ioCounter}\n\t\t  ${colors[blue]}Path:\t\t${colors[none]}${disk}\n\t\t${colors[blue]}  Format:\t${colors[none]}${disks[$disk]}"
+  if [ -n "${disks[$disk]}" ]
+  then
+    diskFormat=",format=${disks[$disk]}"
+  else
+    unset diskFormat
+  fi
+
+  printer "\t\t${ioCounter}"
+  printer "\t\t${colors[blue]}  Path:\t\t${colors[none]}${disk}"
+  printer "\t\t${colors[blue]}  Format:\t${colors[none]}${disks[$disk]}"
   checkFileExists "$disk"
   permissionsManager takeown ${disk}
   coreArgs+=" -drive file=$disk,if=none,discard=on,id=drive${ioCounter}${diskFormat}"
   coreArgs+=" -device ${deviceTypes[scsiController]},drive=drive${ioCounter},id=disk${ioCounter}"
-  if [ -z "$avoidVirtio" ]
-  then # We can't use iothreads with an lsi scsi controller, at least not this way.
-    coreArgs+=",iothread=iothread${ioCounter}" #Intentionally attached as extra for the previous device
+
+  # Skip iothreads for both the virtual SATA controller and NVMe controller which lack support. (No flag)
+  if [ -z "$avoidVirtio" ] && [ -z "$nvme" ]
+  then
+    coreArgs+=",iothread=iothread${ioCounter}" # Intentionally attached as extra for the previous device
     coreArgs+=" -object iothread,id=iothread${ioCounter}"
+
+  elif [ -n "$nvme" ] # If NVMe set a serial or use the real disk's serial if available.
+  then
+    unset serial
+    if [ -b "${disk}" ]
+    then
+      nvmeDiskPath="$(realpath ${disk})"
+
+      # Strip any partitions if nesting.
+      nvmeDiskPathNoPart="$(awk '/\/dev\/.*p[0-9]+/ {sub("p[0-9]+$","")} /\/dev\/sd[a-z]+[0-9]+/ {sub("[0-9]+$","")} END {print $0}' <<< "${nvmeDiskPath}")"
+      nvmeDiskName="$(basename ${nvmeDiskPathNoPart})"
+
+      # If serial exists and can be read
+      if [ -f "/sys/block/${nvmeDiskName}/device/serial" ] && [ -r "/sys/block/${nvmeDiskName}/device/serial" ]
+      then
+        serial="$(</sys/block/${nvmeDiskName}/device/serial)"
+        nvmeDiskNotes="(Physical serial of device)"
+      else
+        serial="${nvmeDiskName}"
+        nvmeDiskNotes="(Fallback. Unable to read serial)"
+      fi
+    fi
+
+    # Drop any whitespace from serial read.
+    [[ "${serial}" =~ ' ' ]] && serial="${serial// /}"
+
+    # Set a default serial if we failed to discover one.
+    [ -z "${serial}" ] && serial="disk${ioCounter}"
+
+    coreArgs+=",serial=${serial}"
+    printer "\t\t${colors[blue]}  Serial:\t${colors[none]}${serial} ${nvmeDiskNotes}"
   fi
 done
 

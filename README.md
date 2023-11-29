@@ -115,8 +115,16 @@ In general this script has been very useful in my tinkering even outside VFIO ga
 `-image /dev/zvol/zpoolName/windows -imageformat raw`
 
    If set, attaches a flatfile, partition, whole-disk or zvol to the VM with QEMU's -drive parameter.
-   -imageformat is optional and will apply to the most recent -image argument specified.
+   -imageformat is optional for virtual disks and will apply to the most recent -image argument specified.
+   -imageformat must be specified for raw storage to prevent QEMU from activating a safety feature.
    -image and -imageformat can be used multiple times to add more disks.
+
+`-nvme`
+
+  Present storage to the guest virtualizing NVMe rather than using virtio-blk-pci or ide-hd (with -avoidVirtio).
+
+  This can prove useful when booting a physical installation on NVMe which lacks other storage drivers in their bootloader and general permanent P2V scenarios. For long term usage I strongly recommend installing the virtio driver on the guest instead.
+
 
 `-iso /path/to/a/diskimage.iso`
 
