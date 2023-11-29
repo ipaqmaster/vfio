@@ -770,7 +770,7 @@ function checkDependency {
 function checkKvmHypervisorEligibility {
   # Check for kvm module presence and host support. Try to self resolve any issues which pop up.
   
-  function cpuSupportsVirtualization { grep -Esq "vmx|svm|0xc0f" /proc/cpuinfo ; return $? ;}
+  function cpuSupportsVirtualization { grep -Eqs "vmx|svm|0xc0f" /proc/cpuinfo ; return $? ;}
 
   function kernelModuleExists { modinfo $1 > /dev/null 2>&1 ; return $? ;}
 
