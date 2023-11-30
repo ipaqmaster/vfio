@@ -866,6 +866,29 @@ function checkKvmHypervisorEligibility {
   fi 
 }
 
+function checkLibraryExists {
+  while [ $# -gt 0 ]
+  do
+    case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in 
+      -library)
+        library="$2"
+        shift
+      ;;  
+      -64)
+        archPath="lib64"
+        shift
+      ;;
+  esac
+  shift
+done
+
+  [ -z "$archPath" ] && archPath="lib"
+
+  # May slow things down on a well established system. Should add a common lookup table for common distro locations.
+  [ -n "$(find /usr/${archPath} -type f -name "${library}" 2>/dev/null)" ]
+  
+  return $?
+}
 
 #    _
 #   / \   _ __ __ _ ___
@@ -1338,28 +1361,87 @@ coreArgs+=" -nodefaults"       # Don't use any default devices
 
 if [ -n "$hostAudio" ]
 then
-  printer "${colors[green]}-hostaudio\tspecified, VM will use a pulseaudio backend to the host for audio output this run."
-  soundArgs="-audiodev pa,id=snd0"
-  soundArgs+=" -device ich9-intel-hda -device hda-output,audiodev=snd0"
-  coreArgs+=" $soundArgs"
+  printer "${colors[green]}-hostaudio\tspecified, VM will use a host audio backend this run."
 
-  if ! isDry
-  then
-    if ps -au${USER}|grep pulseaudio > /dev/null 2>&1
+  audioSystems=(pipewire pulseaudio)
+  audioSystem="$(which ${audioSystems[@]} 2>/dev/null)"
+  if [ -z "${audioSystem}" ] 
+  then 
+    printer "${colors[red]}\t\tUnable to find an audio server supported by this script. (${audioSystems[@]})"
+    ((++expectLaunchIssue))
+  else
+
+    audioSystemName="$(basename ${audioSystem})"
+    declare -A soundDrivers
+
+    soundDrivers[pipewireAudiodev]=pipewire
+    soundDrivers[pipewireLib]=audio-pipewire.so
+    soundDrivers[pipewireFallback]=pulseaudio
+
+    soundDrivers[pulseaudioAudiodev]=pa
+    soundDrivers[pulseaudioLib]=audio-pa.so
+
+    soundDriver=${soundDrivers[${audioSystemName}Audiodev]}
+    soundDriverFile=${soundDrivers[${audioSystemName}Lib]}
+    soundDriverFallback=${soundDrivers[${audioSystemName}Fallback]}
+
+
+    if checkLibraryExists -library ${soundDriverFile}
     then
-      printer "${colors[green]}\t\tPulseaudio aleady running on host"
-    elif which pulseaudio
-    then
-      if pulseaudio -D
-      then
-        printer "${colors[green]}\t\tPulseaudio started on host."
-      else
-        printer "${colors[red]}\t\tFound Pulseaudio on host but could not start it."
-      fi
+      qemuAudioDevCheck=1
     else
-      printer "${colors[red]}\tPulseaudio not found on host."
+      if [ -n "${soundDriverFallback}" ]
+      then # Try pa fallback
+            soundDriverFallbackAudiodev=${soundDrivers[${soundDriverFallback}Audiodev]}
+        soundDriverFallbackFileLib=${soundDrivers[${soundDriverFallback}Lib]}
+        if which pipewire-pulse >/dev/null 2>&1 && checkLibraryExists -library ${soundDriverFallbackFileLib}
+        then
+          printer "${colors[green]}\t\tFalling back to ${soundDriverFallback} as the system has the qemu library software present."
+          soundDriver="${soundDriverFallbackAudiodev}"
+          soundDriverFile="${soundDriverFallbackFileLib}"
+          audioSystemDeps+=(pipewire-pulse)
+          qemuAudioDevCheck=1
+        fi
+      fi
+    fi
+
+    if [ -z "${qemuAudioDevCheck}" ]
+    then
+      printer "${colors[red]}\t\t${soundDriverFile} missing from system."
+      printer "${colors[red]}\t\taudiodev may not work without installing your distro's relevant package for this library."
+      ((++expectLaunchIssue))
+    fi
+
+  if ! isDry # Start an audio sever
+  then
+    if ps -au ${USER} | grep -Eoqs " (${audioSystemName})$"
+    then
+      printer "${colors[green]}\t\t${audioSystemName} aleady running on host"
+      hostSoundReady=1
+    else
+      systemctl start --user ${audioSystemName} ${audioSystemDeps}
+
+      case $? in
+        0)
+          printer "${colors[green]}\t\tStarted ${audioSystemName}."
+          hostSoundReady=1
+        ;;
+        1)
+          printer "${colors[green]}\t\tFailed to start ${audioSystemName}."
+          ((++expectLaunchIssue))
+        ;;
+        *)
+          printer "${colors[red]}\tSomething else went wrong trying to start ${audioSystemName}."
+          ((++expectLaunchIssue))
+      esac
     fi
   fi
+
+fi
+
+  soundArgs="-audiodev ${soundDriver},id=snd0"
+  soundArgs+=" -device ich9-intel-hda -device hda-output,audiodev=snd0"
+  coreArgs+=" $soundArgs"
 fi
 
 if [[ -n "${!disks[@]}" ]]
