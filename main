@@ -1007,8 +1007,6 @@ do
       nvme=1
     ;;
     -pci)
-    ;;
-    -pci)
       checkIOMMU
       pciREGEX="$2"
       shift
