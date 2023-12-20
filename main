@@ -1184,7 +1184,10 @@ then
     echo "${colors[red]}Failed to find a default memory value for the guest."
   fi
 else
-  if  [[ "$memoryArgs" =~ 'G' ]]; then memoryArgs="$(($(grep -Eo '[0-9]+' <<< $memoryArgs) * 1024 ))"; fi # Convert to MB
+  if [[ "$memoryArgs" =~ [gG]$ ]] # Convert to MB
+  then
+    memoryArgs="$(($(grep -Eo '[0-9]+' <<< $memoryArgs) * 1024 ))"
+  fi
   guestmemoryMB=$memoryArgs
   printer "${colors[green]}-memory\t\tspecified, guest will receive:\t\t\t${colors[none]}${guestmemoryMB} MB"
 fi
