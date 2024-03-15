@@ -279,30 +279,30 @@ function networking {
 
   if [ "$1" == "start" ] && ! isDry
   then
-    printer "\t\t Determining network situation..."
+    printer "\t\tDetermining network situation..."
     # Determine how we will approach the network situation
 
     # If we've been invoked without a tap interface name - generate a free one.
     if [ -z "${tap}" ]
+    then
+      if tap=$(genTap)
       then
-        if tap=$(genTap)
-        then
-          tapAutoDiscovered=1
-          printer "${colors[blue]}\t\tUsing tap name ${tap} for VM"
-        else
-          printer "Failed to discover a free tap interface name to use." "fault"
-          ((++expectLaunchIssue))
-          return 1
-        fi
+        tapAutoDiscovered=1
+        printer "${colors[blue]}\t\tUsing tap name ${tap} for VM"
+      else
+        printer "\t\tFailed to discover a free tap interface name to use." "fault"
+        ((++expectLaunchIssue))
+        return 1
+      fi
 
     # Otherwise check if the user-provided tap exists already
     else
       if [ -L /sys/class/net/${tap} ]
       then
-        printer "Specified tap ${tap} already exists, will attempt to attach VM to that."
-        tapAlreadyExists=1
-      elif
-        printer "Specified tap ${tap} does not exist, will create and attach VM to that."
+        printer "\t\tSpecified tap ${tap} already exists, will attempt to attach VM to that."
+        tapPreexists=1
+      else
+        printer "\t\tSpecified tap ${tap} does not exist, will create and attach VM to that."
       fi
     fi
 
@@ -310,16 +310,18 @@ function networking {
     # assume the VM's networking will be solely this tap interface
     if [ -z "${bridge}${hostInt}" ]
     then
-      printer "${colors[green]}No bridge or host interface specified. The VM will be attached to ${tap}."
-      printer "${colors[orange]} the ${tap} interface must be configured on the host for the VM to communicate with it."
+      printer "${colors[green]}\t\tNo bridge or host interface specified. The VM will be attached to tap ${tap} only."
+      printer "${colors[yellow]}\t\tThe ${tap} interface must be configured on the host for the VM to communicate with it."
       tapOnly=1
 
     # Otherwise if there's a host interface check it exists and is not already in use.
     elif [ -n "${hostInt}" ]
     then
-      if [ ! -d /sys/class/net/${hostInt} ]
+      if [ -d /sys/class/net/${hostInt} ]
       then
-        printer "${colors[red]}interface ${hostInt} specified but not found. Refusing to continue." "fault"
+        intExists=1
+      else
+        printer "${colors[red]}\t\tinterface ${hostInt} specified but not found. Refusing to continue." "fault"
         brStartFault=1
         ((++expectLaunchIssue))
         return 1
@@ -327,39 +329,42 @@ function networking {
 
       if [ -L /sys/class/net/${hostInt}/master ] 
       then
-        printer "${colors[red]}Host interface ${hostInt} already belongs to a bridge. Refusing to modify its existing configuration." "fault"
+        printer "${colors[red]}\t\tHost interface ${hostInt} already belongs to a bridge. Refusing to modify its existing configuration." "fault"
         brStartFault=1 
         ((++expectLaunchIssue))
         return 1
       fi
 
     else # At this point the only other possibility is that a bridge interface has been specified.
-      printer "Host int not specified, will attach VM tap to existing bridge"
+      printer "\t\tHost int not specified, will attach VM tap to existing bridge"
     fi
 
 
     
 
     # If a bridge has been defined and exists we'll attach the tap interface to it.
-    if [ -d "/sys/class/net/${bridge}" ]
+    if [ -n "${bridge}" ]
     then
-      printer "${colors[green]} bridge ${bridge} exists, will attach ${tap} to that."
-      bridgePreexists=1
-      bridgePreexistsStatus=$(</sys/class/net/br0/operstate)
-
-      # If it doesn't exist but a hostInt has been set we will create the bridge and attach the tap and host interface to it.
-    elif [ -n "${hostInt}" ]
-      printer "${colors[green]} bridge ${bridge} doesn't exist but host interface ${int} has been specified."
-      printer "${colors[green]} We'll create it and attach both ${tap} and ${hostInt} to it and run dhclient on it for the host's own networking."
-      bridgePreexists=0
-    else
-      printer "${colors[red]}bridge ${bridge} does not exist, but no host interface has been specified." "fault"
-      printer "${colors[red]}Refusing to create a bridge interface for no reason." "fault"
-      printer "${colors[red]}Either include a host interface with -hostint or drop the -bridge argument to use only a tap adapter." "fault"
-      printer "${colors[red]}Or drop all networking arguments to use user-mode NAT networking." "fault"
-      brStartFault=1 
-      ((++expectLaunchIssue))
-      return 1
+      if [ -d "/sys/class/net/${bridge}" ]
+      then
+        printer "${colors[green]}\t\tBridge ${bridge} exists, will attach ${tap} to that."
+        bridgePreexists=1
+  
+        # If it doesn't exist but a hostInt has been set we will create the bridge and attach the tap and host interface to it.
+      elif [ -n "${hostInt}" ]
+      then
+        printer "${colors[green]}\t\tBridge ${bridge} doesn't exist but host interface ${int} has been specified."
+        printer "${colors[green]}\t\tWe'll create it and attach both ${tap} and ${hostInt} to it and run dhclient on it for the host's own networking."
+        bridgePreexists=0
+      else
+        printer "${colors[red]}\t\tbridge ${bridge} does not exist, but no host interface has been specified." "fault"
+        printer "${colors[red]}\t\tRefusing to create a bridge interface for no reason." "fault"
+        printer "${colors[red]}\t\tEither include a host interface with -hostint or drop the -bridge argument to use only a tap adapter." "fault"
+        printer "${colors[red]}\t\tOr drop all networking arguments to use user-mode NAT networking." "fault"
+        brStartFault=1 
+        ((++expectLaunchIssue))
+        return 1
+      fi
     fi
 
     # Create a MAC Address for the VM based of either the host int or bridge bridge for easy L2 identification.
@@ -371,36 +376,47 @@ function networking {
     # Create our bridge if required and stop NetworkManager if it were running.
     if [ -n "${bridge}" ] && [ ${bridgePreexists} -eq 0 ]
     then
-      if systemctl is-active NetworkManager >/dev/null ; then sudo systemctl stop NetworkManager ; export nm="seen" ; fi
-        # Create the bridge,        bring it up.
-      sudo ip link add ${bridge} type bridge ; sudo ip link set ${bridge} up
-        # Remove IPs from int,  attach int to bridge,              give bridge int's mac,                bring int up.
-      if [ ${hostInt}Exists = 1 ]
+
+      # Handle NM
+      if systemctl is-active NetworkManager >/dev/null
       then
-        sudo ip addr flush dev ${hostInt} && sudo ip link set dev ${hostInt} master ${bridge} && sudo ip link set dev ${bridge} address $(etherGrep ${hostInt})
-        sudo ip link set ${hostInt} up
+        sudo systemctl stop NetworkManager
+        export nm="seen"
+      fi
+
+      # Create the bridge and bring it up
+      sudo ip link add ${bridge} type bridge
+      sudo ip link set ${bridge} up
+
+      if [ -n "${intExists}" ]
+      then
+        # Remove IPs from int and attach it to the bridge. Copy the MAC and bring it up.
+        sudo ip addr flush dev ${hostInt} && \
+          sudo ip link set dev ${hostInt} master ${bridge} && \
+          sudo ip link set dev ${bridge} address $(etherGrep ${hostInt}) && \
+          sudo ip link set ${hostInt} up
       fi
     fi
 
-    # Bring the bridge up if it pre-exists in a 'down' state.
-    if [[ "${bridgePreexistsStatus}" == down ]]
-    then
-      sudo ip link set ${bridge} up
-    fi
-    function etherGrep {
-  if [ -n "$1" ]
-  then
-    ip link show $etherGrepInterface | grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+'
-  else
-    return
-  fi
-}
-
-
     # Create the tap if required
-    if [ -z "$tapAlreadyExists" ]
+    if [ -z "${tapPreexists}" ]
     then
         sudo ip tuntap add ${tap} mode tap
+    fi
+
+    # Bring the tap device up if it isn't already.
+    if [[ "$(</sys/class/net/${tap}/operstate)" == "down" ]]
+    then
+        sudo ip link set ${tap} up
+    fi
+
+    # Bring the bridge device up if it isn't already.
+    if [ -n "${bridge}" ]
+    then
+      if [[ "$(</sys/class/net/${bridge}/operstate)" == "down" ]]
+      then
+        sudo ip link set ${bridge} up
+      fi
     fi
 
     # Take ownership of the tun special device for running qemu without root.
@@ -410,9 +426,9 @@ function networking {
     if [ -n "${bridge}" ] # This check may not be required with the logic early in this function.
     then
       sudo ip link set ${tap} master ${bridge} && sudo ip link set ${tap} up
-      printer '------------------'
-      printer "Bridge details:"
-      printer "\t${bridge}:"
+      printer '\t\t------------------'
+      printer "\t\tBridge details:"
+      printer "\t\t\t${bridge}:"
       for interface in $(ls -1 /sys/class/net/)
       do
         if [ -e "/sys/class/net/${interface}/master" ]
@@ -420,36 +436,46 @@ function networking {
           master=$(basename $(readlink /sys/class/net/${interface}/master))
           if [ "$master" == "${bridge}" ]
           then
-            printer "\t  ${interface}"
+            printer "\t\t\t  ${interface}"
           fi
         fi
       done
 
       if [ ${bridgePreexists} -eq 0 ] && [ -n "${hostInt}" ]
       then
-        echo "Running dhclient on ${bridge}..."
+        printer "\t\tRunning dhclient on ${bridge}..."
         sudo dhclient -v ${bridge} 2>&1|grep '^DHCPACK'
       else
-        printer "${colors[green]}Bridge already existed, not running dhclient -r on it."
+        printer "${colors[green]}\t\tBridge already existed, not running dhclient -r on it."
       fi
     fi
     echo '------------------'
-  elif [ "$mode" == "start" ] && isDry
-  then
-    printer "${colors[green]}-bridge\t\tacknowledged [DRY]"
-  elif [ "$mode" == "stop" ] && ! isDry && [ -z "$brStartFault" ]
+  elif [ "$1" == "stop" ] && ! isDry && [ -z "$brStartFault" ]
   then
     if [ -n "${bridge}" ] && [ ${bridgePreexists} -eq 0 ]
     then
       printer "${colors[yellow]}Undoing our bridge..."
       dhclient -r ${bridge} >/dev/null 2>&1 && printer "${colors[green]}dhcp lease released and dhclient process ended..."
-      for i in ${tap} ${bridge}; do sudo ip link set $i down ; sudo ip link del $i; done # Remove the tap and bridge
-      if ! ip link show ${bridge} >/dev/null 2>&1; then printer "${colors[green]}Bridge removed."; fi
-    else
-      printer "${colors[green]}We only used ${tap} on an existing bridge this run, removing ${tap}."
-      for i in ${tap} ; do sudo ip link set $i down ; sudo ip link del $i; done && printer "${colors[green]}${tap} removed." # Remove the tap
+      sudo ip link set ${bridge} down
+      sudo ip link del ${bridge}
+      if ! ip link show ${bridge} >/dev/null 2>&1
+      then
+        printer "${colors[green]}Bridge ${bridge} removed."
+      fi
     fi
-    if [ "$nm" == "seen" ]; then sudo systemctl restart NetworkManager ; printer "${colors[green]}NetworkManager restarted." ; fi
+
+    if [ -z "${tapPreexists}" ]
+    then
+      sudo ip link set ${tap} down
+      sudo ip link del ${tap}
+      printer "${colors[green]}Tap ${tap} removed."
+    fi
+
+    if [ "$nm" == "seen" ]
+    then
+      sudo systemctl restart NetworkManager
+      printer "${colors[green]}NetworkManager restarted."
+    fi
   fi
 
 }
@@ -1648,11 +1674,12 @@ then
 fi
 
 # Prepare any advanced guest networking requested
-[ -n "${bridge}" ]           && printer "${colors[green]}-bridge\t\tspecified.  (${bridge})"
-[ -n "${userSpecifiedTap}" ] && printer "${colors[green]}-tap\t\tspecified.     (${tap})"
-[ -n "${hostInt}" ]          && printer "${colors[green]}-hostInt\t\tspecified. (${hostInt})"
+ isDry && networkingFlagString='Acknowledged [DRY]' ||  networkingFlagString=specified
+[ -n "${bridge}" ]           && printer "${colors[green]}-bridge\t\t${networkingFlagString}\t(${bridge})"
+[ -n "${userSpecifiedTap}" ] && printer "${colors[green]}-tap\t\t${networkingFlagString}\t(${tap})"
+[ -n "${hostInt}" ]          && printer "${colors[green]}-hostInt\t\t${networkingFlagString}\t(${hostInt})"
 
-if [ -n "${networking}" ]
+if [ -n "${networking}" ] && ! isDry
 then
   if networking start
   then
