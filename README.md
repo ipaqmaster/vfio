@@ -130,35 +130,21 @@ In general this script has been very useful in my tinkering even outside VFIO ga
 
    If set, attaches an ISO to QEMU with an incrementing index id. Can be specified as many times needed for multiple CDs. Good for liveCDs or installing an OS with an optional driver-cd.
 
-`-bridge tap0,br0       (Attach vm's tap0 to existing br0)`
+`-bridge br0`, `-tap tap5`, '-hostint enp1s0'
 
-`-bridge tap0,br0,eth0  (Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)`
+  Specify a bridge interface to attach the VM to automatically with a new tap interface.
 
-   Takes a bridge name, interface and tap interface name as arguments.
-   
-   Using example 1:
-   
-1. Checks br0 exists first.
-     
-2. Creates tap0 for the vm as usual and attaches it to the pre-existing br0 (No dhclient, assumes pre-existing bridge is configured)
-     
-3. During cleanup unslaves and deletes tap0.
-     
-Using example 2:
-   
-1. Creates br0 + tap0.
-     
-2. Slaves tap0 and eth0 to br0.
-     
-3. Copies the mac from eth0 to the br0 (To preserve any DHCP Reservation in a network)
-     
-4. Removes any lingering IPs from eth0. (flush)
-     
-5. Brings all 3 up and runs dhclient on br0
-     
-6. During cleanup, frees the interface from the bridge and deletes the bridge and tap interface. Restores NetworkManager if it were found to be running.
-     
-   If this argument isn't specified the default QEMU NAT adapter will be used
+  Optionally include a host interface for creating a new bridge on the fly.
+
+  Optionally specify a custom tap interface name to use. It will be created automatically or an existing tap can be used if already pre-configured.
+
+  At a minimum either -bridge with an existing bridge to attach to or -tap need to be specified for these advanced networking options. To create an entirely new bridge from scratch all three arguments must be provided.
+
+  If only `-tap tapX` is provided the interface will be created if needed and the VM will be attached to that only. This implies the host machine will need to configure an IP on tapX to communicate with the guest.
+
+  The script checks for existing interfaces and their status for managing the guest's networking during the run and will stop and restore NetworkManager to manage the bridge. It also employs a custom guest MAC Address generator based off the host hardware for easy layer 2 recognition
+
+   If these three networking arguments aren't specified the default QEMU NAT adapter will be used.
     (NAT may be desirable for some setups)
 
 `-memory 8192M` / `-m 8G` / `-mem 8G`
