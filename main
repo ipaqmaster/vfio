@@ -237,15 +237,12 @@ function regexCleanup {
 }
 
 function etherGrep {
-  if [ -z "$1" ]
+  if [ -n "${1}" ]
   then
-    echo "etherGrep needs an interface as an argument to grep its mac address."
-    return 1
+    ip link show "${1}" | grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+'
   else
-    etherGrepInterface=$1
+    return
   fi
-  ip link show $etherGrepInterface | grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+'
-    unset etherGrepInterface
 }
 
 function buildGuestMac {
