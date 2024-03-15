@@ -82,10 +82,10 @@ function printHelp {
   printer "    (Try to) Print thread parings for each core.\n"
   printer "    Useful if you plan to use -pinvcpus or plan to update your kernel arguments for isolation"
 
-  printer "  ${colors[cyan]}-bridge tap0\t\t${colors[none]}(Attach vm to tap0 with no bridge for direct vm to host connectivity only)"
-  printer "  ${colors[cyan]}-bridge tap0,br0\t${colors[none]}(Attach vm's tap0 to existing br0)"
-  printer "  ${colors[cyan]}-bridge tap0,br0,eth0\t${colors[none]}(Create br0, attach vm's tap0 and host's eth0 to br0, use dhclient for a host IP.)"
-  printer "    If no network options are specified the default qemu NAT adapter will be used.\n"
+  printer "  ${colors[cyan]}-bridge br0\t\t${colors[none]}(Attach vm to a bridge with a new tap interface. Also creates the bridge if missing.)"
+  printer "  ${colors[cyan]}-tap/-interface tap1\t${colors[none]}(Attach the VM's network card to a new tap interface tap1 - or attaches to it if existing.)"
+  printer "  ${colors[cyan]}-hostint/-ethernet enp0s1\t${colors[none]}(Also attaches the specified host interface to the bridge when specified; allowing the VM true Layer 2 networking on the host LAN.)"
+  printer "    If no network options are specified the default qemu NAT adapter will be used which is OK for most use-cases.\n"
 
   printer "  ${colors[cyan]}-nonet"
   printer "    If specified, the VM is not given a network adapter. Useful if you're passing a USB or PCI network card.\n"
@@ -205,8 +205,8 @@ function do_cleanup {
   permissionsManager return # Restore original permissions if any
   if ! isDry
   then
-      # Undo bridge if used
-    if [[ -n "$bridgeArgs" ]]; then bridger stop $bridgeArgs ; fi
+      # Undo any custom networking
+    if [[ -n "${networking}" ]]; then networking stop ; fi
 
       # Rebind the console and PCI devices if they were rebound
     if [ -n "$pciREGEX" ]
@@ -255,110 +255,180 @@ function buildGuestMac {
   fi
 }
 
-function bridger {
-  [ -n "$expectLaunchIssue" ] && ! isDry && return 0 # No action if issue present
-
-  # Attach guest network to a tap and optionally that to a bridge and optionally a host interface to that same bridge.
-  mode=$1
-   tap=$2
-    br=$3
-   int=$4
-
-  if [ "$mode" == "start" ] && ! isDry
+function genTap { # Think of a free tap name.
+  inc=0
+  # Look for a suitable numbered tap interface name.
+  until [ ! -L /sys/class/net/tap${inc} ] || [ $inc -ge 100 ]
+  do
+    ((inc++))
+  done
+  if [ $inc -ge 100 ]
   then
-    if [ -n "$tap" ] && [ -z "${br}${int}" ] # If only a tap were specified, attach the vm to that without a bridge
-    then
-      if [ ! -L /sys/class/net/$tap ] >/dev/null 2>&1
-      then
-        printer "Specified tap $tap does not exist, will create and attach VM to that."
-        brTapOnly=1
-      else
-        printer "Specified tap $tap already exists, will attempt to attach VM to that."
-        brTapAlreadyExists=1
-      fi
-
-    elif [ -n "$int" ]
-    then
-      if [ ! -d /sys/class/net/$int ]      ; then printer "${colors[red]}interface $int specified but not found, not bridging." "fault"                ; brStartFault=1 ; exit 1 ; else intExists=1 ; fi
-      if [ -L /sys/class/net/$int/master ] ; then printer "${colors[red]}interface $int specified but already part of a bridge, not changing." "fault" ; brStartFault=1 ; exit 1 ; fi
-    else
-      printer "Host int not specified, will attach VM tap to existing bridge"
-      intExists=0
-    fi
-
-   if [ -n "${br}" ] && [ -d "/sys/class/net/${br}" ]
-    then
-      if grep -qs -E '^up$' /sys/class/net/${br}/operstate
-      then
-        printer "${br} exists and is up, will attach ${tap} to that."
-        bridgePreexists=1
-      elif [ -n "${int}" ]
-      then
-        printer "${colors[green]}bridge ${br} is down and a host int has been specified, will create ${br} for this session and attach ${int} + ${tap} to it."
-        bridgePreexists=0
-      fi
-    else
-      printer "${colors[red]}bridge ${br} not found. No host int specified to bridge guest with.\nRefusing to create a bridge for the guest without a host interface." "fault"
-      brStartFault=1
-      ((++expectLaunchIssue))
-      return 1 # Proceed no further
-    fi
-
-    # If a host interface were specified, steal the last 3 mac octets for identification,
-    # Otherwise try to steal last 3 octets from the bridge interface mac instead.
-
-  # Build VM's mac address from above
-  if [ -n "${int}" ]
-  then
-      # From specified int
-    tapMAC="$(buildGuestMac $(etherGrep ${int}))"
-  elif [ -n "${br}" ]
-  then
-      # From specified bridge
-    tapMAC="$(buildGuestMac $(etherGrep ${br}))"
+    return 1
   else
-      # From random generation otherwise
-    tapMAC="$(buildGuestMac)"
+   echo "tap${inc}"
   fi
+}
+
+function networking {
+  # A function for handling guest tap interfaces, bridge interfaces, host ethernet interfaces
+  # and tying them all together, pre-existing or not.
  
-    if  [ -n "${br}" ] && [ ${bridgePreexists} -eq 0 ]
+  # Do not act if there are run issues.
+  [ -n "$expectLaunchIssue" ] && ! isDry && return 0
+
+  if [ "$1" == "start" ] && ! isDry
+  then
+    printer "\t\t Determining network situation..."
+    # Determine how we will approach the network situation
+
+    # If we've been invoked without a tap interface name - generate a free one.
+    if [ -z "${tap}" ]
+      then
+        if tap=$(genTap)
+        then
+          tapAutoDiscovered=1
+          printer "${colors[blue]}\t\tUsing tap name ${tap} for VM"
+        else
+          printer "Failed to discover a free tap interface name to use." "fault"
+          ((++expectLaunchIssue))
+          return 1
+        fi
+
+    # Otherwise check if the user-provided tap exists already
+    else
+      if [ -L /sys/class/net/${tap} ]
+      then
+        printer "Specified tap ${tap} already exists, will attempt to attach VM to that."
+        tapAlreadyExists=1
+      elif
+        printer "Specified tap ${tap} does not exist, will create and attach VM to that."
+      fi
+    fi
+
+    # If the user hasn't specified a bridge or host interface,
+    # assume the VM's networking will be solely this tap interface
+    if [ -z "${bridge}${hostInt}" ]
+    then
+      printer "${colors[green]}No bridge or host interface specified. The VM will be attached to ${tap}."
+      printer "${colors[orange]} the ${tap} interface must be configured on the host for the VM to communicate with it."
+      tapOnly=1
+
+    # Otherwise if there's a host interface check it exists and is not already in use.
+    elif [ -n "${hostInt}" ]
+    then
+      if [ ! -d /sys/class/net/${hostInt} ]
+      then
+        printer "${colors[red]}interface ${hostInt} specified but not found. Refusing to continue." "fault"
+        brStartFault=1
+        ((++expectLaunchIssue))
+        return 1
+      fi
+
+      if [ -L /sys/class/net/${hostInt}/master ] 
+      then
+        printer "${colors[red]}Host interface ${hostInt} already belongs to a bridge. Refusing to modify its existing configuration." "fault"
+        brStartFault=1 
+        ((++expectLaunchIssue))
+        return 1
+      fi
+
+    else # At this point the only other possibility is that a bridge interface has been specified.
+      printer "Host int not specified, will attach VM tap to existing bridge"
+    fi
+
+
+    
+
+    # If a bridge has been defined and exists we'll attach the tap interface to it.
+    if [ -d "/sys/class/net/${bridge}" ]
+    then
+      printer "${colors[green]} bridge ${bridge} exists, will attach ${tap} to that."
+      bridgePreexists=1
+      bridgePreexistsStatus=$(</sys/class/net/br0/operstate)
+
+      # If it doesn't exist but a hostInt has been set we will create the bridge and attach the tap and host interface to it.
+    elif [ -n "${hostInt}" ]
+      printer "${colors[green]} bridge ${bridge} doesn't exist but host interface ${int} has been specified."
+      printer "${colors[green]} We'll create it and attach both ${tap} and ${hostInt} to it and run dhclient on it for the host's own networking."
+      bridgePreexists=0
+    else
+      printer "${colors[red]}bridge ${bridge} does not exist, but no host interface has been specified." "fault"
+      printer "${colors[red]}Refusing to create a bridge interface for no reason." "fault"
+      printer "${colors[red]}Either include a host interface with -hostint or drop the -bridge argument to use only a tap adapter." "fault"
+      printer "${colors[red]}Or drop all networking arguments to use user-mode NAT networking." "fault"
+      brStartFault=1 
+      ((++expectLaunchIssue))
+      return 1
+    fi
+
+    # Create a MAC Address for the VM based of either the host int or bridge bridge for easy L2 identification.
+    # Otherwise generate one at random.
+    tapMAC="$(buildGuestMac $(etherGrep ${hostInt:-${bridge}}))"
+
+    # Start creating things
+
+    # Create our bridge if required and stop NetworkManager if it were running.
+    if [ -n "${bridge}" ] && [ ${bridgePreexists} -eq 0 ]
     then
       if systemctl is-active NetworkManager >/dev/null ; then sudo systemctl stop NetworkManager ; export nm="seen" ; fi
         # Create the bridge,        bring it up.
-      sudo ip link add ${br} type bridge ; sudo ip link set ${br} up
+      sudo ip link add ${bridge} type bridge ; sudo ip link set ${bridge} up
         # Remove IPs from int,  attach int to bridge,              give bridge int's mac,                bring int up.
-      if [ $intExists = 1 ]
+      if [ ${hostInt}Exists = 1 ]
       then
-        sudo ip addr flush dev $int && sudo ip link set dev $int master ${br} && sudo ip link set dev ${br} address $(etherGrep $int)
-        sudo ip link set $int up
+        sudo ip addr flush dev ${hostInt} && sudo ip link set dev ${hostInt} master ${bridge} && sudo ip link set dev ${bridge} address $(etherGrep ${hostInt})
+        sudo ip link set ${hostInt} up
       fi
     fi
-      # Create the tap if missing, attach tap to bridge if specified and bring the tap up
-    [ -z "$brTapAlreadyExists" ] && sudo ip tuntap add $tap mode tap
+
+    # Bring the bridge up if it pre-exists in a 'down' state.
+    if [[ "${bridgePreexistsStatus}" == down ]]
+    then
+      sudo ip link set ${bridge} up
+    fi
+    function etherGrep {
+  if [ -n "$1" ]
+  then
+    ip link show $etherGrepInterface | grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+'
+  else
+    return
+  fi
+}
+
+
+    # Create the tap if required
+    if [ -z "$tapAlreadyExists" ]
+    then
+        sudo ip tuntap add ${tap} mode tap
+    fi
+
+    # Take ownership of the tun special device for running qemu without root.
     permissionsManager takeown /dev/net/tun
 
-    if [ -n "$br" ]
+    # Attach our new tap interface to the bridge 
+    if [ -n "${bridge}" ] # This check may not be required with the logic early in this function.
     then
-      sudo ip link set $tap master ${br} && sudo ip link set $tap up
+      sudo ip link set ${tap} master ${bridge} && sudo ip link set ${tap} up
       printer '------------------'
       printer "Bridge details:"
-      printer "\t$br:"
+      printer "\t${bridge}:"
       for interface in $(ls -1 /sys/class/net/)
       do
-        if [ -e "/sys/class/net/$interface/master" ]
+        if [ -e "/sys/class/net/${interface}/master" ]
         then
-          master=$(basename $(readlink /sys/class/net/$interface/master))
-          if [ "$master" == "$br" ]
+          master=$(basename $(readlink /sys/class/net/${interface}/master))
+          if [ "$master" == "${bridge}" ]
           then
             printer "\t  ${interface}"
           fi
         fi
       done
 
-      if [ $bridgePreexists -eq 0 ] && [ -n "$int" ]
+      if [ ${bridgePreexists} -eq 0 ] && [ -n "${hostInt}" ]
       then
-        echo "Running dhclient on $br..."
-        sudo dhclient -v ${br} 2>&1|grep '^DHCPACK'
+        echo "Running dhclient on ${bridge}..."
+        sudo dhclient -v ${bridge} 2>&1|grep '^DHCPACK'
       else
         printer "${colors[green]}Bridge already existed, not running dhclient -r on it."
       fi
@@ -369,15 +439,15 @@ function bridger {
     printer "${colors[green]}-bridge\t\tacknowledged [DRY]"
   elif [ "$mode" == "stop" ] && ! isDry && [ -z "$brStartFault" ]
   then
-    if [ -n "$br" ] && [ $bridgePreexists -eq 0 ]
+    if [ -n "${bridge}" ] && [ ${bridgePreexists} -eq 0 ]
     then
       printer "${colors[yellow]}Undoing our bridge..."
-      dhclient -r ${br} >/dev/null 2>&1 && printer "${colors[green]}dhcp lease released and dhclient process ended..."
-      for i in $tap $br; do sudo ip link set $i down ; sudo ip link del $i; done # Remove the tap and bridge
-      if ! ip link show ${br} >/dev/null 2>&1; then printer "${colors[green]}Bridge removed."; fi
+      dhclient -r ${bridge} >/dev/null 2>&1 && printer "${colors[green]}dhcp lease released and dhclient process ended..."
+      for i in ${tap} ${bridge}; do sudo ip link set $i down ; sudo ip link del $i; done # Remove the tap and bridge
+      if ! ip link show ${bridge} >/dev/null 2>&1; then printer "${colors[green]}Bridge removed."; fi
     else
-      printer "${colors[green]}We only used $tap on an existing bridge this run, removing $tap."
-      for i in $tap ; do sudo ip link set $i down ; sudo ip link del $i; done && printer "${colors[green]}$tap removed." # Remove the tap
+      printer "${colors[green]}We only used ${tap} on an existing bridge this run, removing ${tap}."
+      for i in ${tap} ; do sudo ip link set $i down ; sudo ip link del $i; done && printer "${colors[green]}${tap} removed." # Remove the tap
     fi
     if [ "$nm" == "seen" ]; then sudo systemctl restart NetworkManager ; printer "${colors[green]}NetworkManager restarted." ; fi
   fi
@@ -916,8 +986,20 @@ do
       shift
     ;;
     -bridge)
-      bridgeArgs="$(sed 's/,/ /g' <<<$2)"
+      bridge="${2}"
+      networking=1
       checkDependency dhclient openssl ip
+      shift
+    ;;
+    -tap|-interface)
+      userSpecifiedTap=1
+      networking=1
+      tap="${2}"
+      shift
+    ;;
+    -hostint|-ethernet)
+      hostInt="${2}"
+      networking=1
       shift
     ;;
     -colortest|-colourtest)
@@ -1565,14 +1647,18 @@ then
   echo '' # spacer
 fi
 
+# Prepare any advanced guest networking requested
+[ -n "${bridge}" ]           && printer "${colors[green]}-bridge\t\tspecified.  (${bridge})"
+[ -n "${userSpecifiedTap}" ] && printer "${colors[green]}-tap\t\tspecified.     (${tap})"
+[ -n "${hostInt}" ]          && printer "${colors[green]}-hostInt\t\tspecified. (${hostInt})"
 
-if [[ -n "$bridgeArgs" ]]
+if [ -n "${networking}" ]
 then
-  # Make the bridge
-  if bridger start $bridgeArgs 
+  if networking start
   then
-    networkArgs="-netdev tap,id=vmnet,ifname=$tap,script=no,downscript=no" # Bridge
-    printer "${colors[green]}-bridge\t\tspecified, VM will be bridged to the host with a tap adapter."
+    networkArgs="-netdev tap,id=vmnet,ifname=${tap},script=no,downscript=no" # Bridge
+  else
+    ((++expectLaunchIssue))
   fi
 elif [ -n "$noNet" ]
 then
@@ -1586,10 +1672,10 @@ fi
 if [ -z "$noNet" ]
 then
     # Generate a mac for the guest if not bridging.
-  if [ -z "$tapMAC" ]; then tapMAC="$(buildGuestMac)" ; fi
+  if [ -z "${tapMAC}" ]; then tapMAC="$(buildGuestMac)" ; fi
 
     # Add Network card for for nat/bridging
-  networkArgs+=" -device ${deviceTypes[net]},netdev=vmnet,mac=$tapMAC"
+  networkArgs+=" -device ${deviceTypes[net]},netdev=vmnet,mac=${tapMAC}"
 fi
 
 
