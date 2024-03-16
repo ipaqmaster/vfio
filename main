@@ -1011,6 +1011,12 @@ do
       bridge="${2}"
       networking=1
       checkDependency dhclient openssl ip
+      if [[ ${bridge} =~ , ]]
+      then
+        printer "${colors[red]}-bridge has been split into -bridge -hostint and -tap."
+        printer "${colors[red]}Please use these new arguments for each desired component."
+        exit 1
+      fi
       shift
     ;;
     -tap|-interface)
