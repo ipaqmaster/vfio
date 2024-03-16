@@ -291,7 +291,6 @@ function networking {
         printer "${colors[blue]}\t\tUsing tap name ${tap} for VM"
       else
         printer "\t\tFailed to discover a free tap interface name to use." "fault"
-        ((++expectLaunchIssue))
         return 1
       fi
 
@@ -323,7 +322,6 @@ function networking {
       else
         printer "${colors[red]}\t\tinterface ${hostInt} specified but not found. Refusing to continue." "fault"
         brStartFault=1
-        ((++expectLaunchIssue))
         return 1
       fi
 
@@ -331,7 +329,6 @@ function networking {
       then
         printer "${colors[red]}\t\tHost interface ${hostInt} already belongs to a bridge. Refusing to modify its existing configuration." "fault"
         brStartFault=1 
-        ((++expectLaunchIssue))
         return 1
       fi
 
@@ -362,7 +359,6 @@ function networking {
         printer "${colors[red]}\t\tEither include a host interface with -hostint or drop the -bridge argument to use only a tap adapter." "fault"
         printer "${colors[red]}\t\tOr drop all networking arguments to use user-mode NAT networking." "fault"
         brStartFault=1 
-        ((++expectLaunchIssue))
         return 1
       fi
     fi
