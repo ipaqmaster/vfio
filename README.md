@@ -2,91 +2,93 @@
 
 ## About this script
 
-This is a bash script I've put a lot of love into trying to avoid defining VMs in libvirt with hardcoded host PCI addresses, among other virtualization test cases which it helps make very quick for me.
+This is a bash script I've put a lot of love into to avoid libvirt guest definitions with hardcoded PCI paths among other virtualization testing which it also helps make very quick for me.
 
-It starts a VM by calling `qemu-system-x86_64` directly but can automatically handle extra arguments all with the convenience of a terminal with history and the ability to just backspace something out if you don't want it in the guest.
+It starts a VM by calling `qemu-system-x86_64` directly but can automatically handle a bunch of additional optional arguments with the convenience of a terminal with command history. The aim of this script is to make changing how the geust starts up as simple as backspacing something out of the command. Particularly a focus on PCIe devices.
 
-It also happens to make Windows VM gaming a pinch on my single-gpu 2080Ti host and older dual-gpu host with Looking Glass.\
-Now if only NVIDIA would *officially* support vGPUs on their consumer hardware...
+This script makes Windows VM gaming a pinch on my single NVIDIA gpu configuration and also some of my older dual-gpu machines which can take advantage of Looking Glass.
+
+Now if only NVIDIA would officially support vGPUs on their consumer hardware.
 
 ## What does it actually do
 
-It's a good question. On the surface it's just a qemu wrapper... But I swear by it for any VM/VFIO screwery because it also:
+On the surface it's just a qemu wrapper but the magic is in the additional optional arguments it can handle. With these features I swear by it for any VFIO or general virtualization tinkering (kernel testing, physical disk booting, etc).
 
-  * Gives a good rundown of all the extra things it's been asked to do in default 'Dry' mode so it doesn't wreak havoc without saying go(`-run`) first.
+It:
 
-    While also providing the exact QEMU arguments it's about to use if you plan to dive in manually yourself.
+  * Gives a clear rundown of everything it has been asked to do and by default in a 'Dry' mode to avoid wreaking havoc without saying go first. (`-run`)
 
-  * Takes as many virtual disks or iso's as you want to pass in with an iothread on the host for each virtual disk.
+  * Provides the exact QEMU arguments it intends to launch with in case you want to dive into QEMU manually by hand or use the arguments for something else.
 
-    Or if you're passing in an entire disk array, save the overhead and pass the entire HBA controller with `-PCI 'SATA'` (Assuming your host disk isn't SATA driven!)
+  * Safely warns or fails if a critical environment disrepency is detected such as VT-d/IOMMU not being enabled in the bios, or boot flags. Among other environment catches before running itself into a wall.
 
   * Takes an optional regular expression of PCI and USB devices to pass to the VM when starting it.
-  * 
-    (My favorite is `-PCI 'NVIDIA|USB'` to give it my card with all host USB controllers)
+      * My favorite is `-PCI 'NVIDIA|USB'` to give it my graphics card with all host USB controllers on this single-gpu host of mine)
 
-  * Automatically unbinds all specified PCI devices from their driver's onto vfio-pci if they're not already on it.\
+  * Takes as many virtual disks or iso's as you want to pass in with a QEMU iothread for each virtual disk.
+
+    * You could save some overhead over using virtual disks by passing in an entire NVMe/HBA/SATA controller with `-PCI 'SATA'` assuming your host isn't booted via the same controller.
+
+    * Otherwise it also accepts more specific device details such as the PCI device path, model and other discernable features from `lspci -D` if you only want to passthrough speicifc devices: `-PCI 0000:06:00.0`, `-PCI MegaRAID`, `-PCI abcd:1234`.
+
+  * **Automatically unbinds** all specified PCI devices from their driver's onto vfio-pci if they're not already on it.\
     (No need for early host driver blocking or early PCI device vfio binding)
 
-  * Automatically REBINDS all PCI devices back to their originating driver on guest shutdown\
+  * **Automatically rebinds** all specified PCI devices back to their originating driver on guest shutdown\
     (When applicable)
 
-  * Automatically kills the display-manager if the GPU is stuck unbinding for a guest to use\
-    (Unavoidable in single GPU scenarios)\
+  * Can automatically kill the display-manager for a guest to use if it detects the GPU is stuck unbinding\
+    (Commonly unavoidable in single GPU graphical desktop scenarios)\
     But also rebinds the card back to its driver on guest exit and restarts the DM back to the login screen. Almost seamless...
 
-  * Makes network bridges automatically or attaches the VM to an existing bridge with a tap adapter if specified\
+  * Can make network bridges automatically or attaches the VM to an existing bridge with a tap adapter if specified\
     giving your VM a true Layer 2 network presence on your LAN with direct exposure for RDP, SSH, and all.\
     (Useful to avoid the default "One way trip" nat adapter)
 
   * Can describe your host's IOMMU groups and CPU thread pairings per core to aid with vcpu pinning (And isolation planning).
+      * e.g. `-iommugroups` and `-cputhreads`
 
-  *  Takes optional vcpu pinning arguments to help avoid stutter.\
-    (No automatic isolation support just yet. I haven't found a modern method better than boot-time cpu isolation via kernel args that I'd be happy to implement while avoiding reboots.)\
-    (`systemctl set-property --runtime` slice management doesn't take care of IRQ and other isolation performance tweaks I'd like to manage in realtime. But may be enough?)\
-    (For now, I've provided some powerful cpu isolation boot argument examples below. Sorry!)
+  *  Can take optional vcpu pinning arguments to help avoid stutter due to clashing host and guest cpu activity.
+    
+      * No automatic isolation support just yet. I haven't found a modern method better than boot-time cpu isolation via kernel args that I'd be happy to implement while avoiding reboots. `systemctl set-property --runtime` slice management doesn't take care of IRQ and other isolation performance tweaks I'd like to manage in realtime. But might be enough for desktop use-cases. For now, I've provided some powerful cpu isolation boot argument examples below. Sorry!
 
-  * Dynamically allocate hugepages for the VM *on the fly* if host memory isn't too fragmented, otherwise it will notice existing hugepages and use them if there's enough free from earlier/boot time allocation.
+  * Can dynamically allocate hugepages for the VM *on the fly* if host memory isn't too fragmented. Otherwise if pre-allocated and enough free it will notice existing hugepages and use them.
 
-  * Optionally enables Looking Glass support if you have a second i/dGPU on the host to continue graphically with while the guest runs.
+  * Optionally enables Looking Glass support if you have a second d/iGPU on the host to continue graphically while the guest runs.
 
-  * Takes an optional romfile argument for any GPU devices being passed through if needed for your setup.
+  * Can take a romfile argument for any GPU devices being passed through if needed for your setup.
 
   * Optionally includes key hyperv enlightenments for Windows guest performance.
 
-  * And more!
+  * And many more little bits and pieces! (`-help`)
 
-## What hosts and installs are supported?
+## What's supported?
 
-This script has been designed for Archlinux however is going to work just fine on any distro shipping a modern kernel and qemu binary.\
-I've also confirmed that this works on Ubuntu 20.04 and 18.04 as well - But again, it'll work on anything shipping modern kernel and qemu versions. Maybe at worst a minor tweak for path differences distro to distro.
+This script has been designed on and for Archlinux however is mostly generic and the tools it relies on can be added to any system with whichever package manager is supplied. It will work just fine on any distro shipping a modern kernel and qemu binary. At worst some distros may store OVMF_CODE.fd elsewhere and its path will have to be specified with the `-bios` argument - I'll likely add add an array of well-known locations later so those on other distros don't have to specify that.
 
-The host will need to support either Intel's VT-d or AMD-Vi (May just be labelled IOMMU in bios) While even my older PC from the early 2010s supports these modern boards do a much better job for latency and performance.\
-Also don't forget to add the relevant AMD or Intel VFIO arguments to your kernel's boot arguments. On some distros straying enough from the rolling lifestyle, you may need to specify the OVMF path using `-bios`, but that should be the worst of it. 
+I've also confirmed that this works on Ubuntu 20.04 and 18.04 as well - But again, it'll work on anything shipping modern kernel and qemu versions.
 
-Even my partially retired desktop from 2011 with a 3930K CPU and SABERTOOTH X79 motherboard can run this script with two GPUs and a Looking Glass client window into the guest from its desktop.
+For PCIe passthrough specifically the host will need to support either Intel's VT-d or AMD-Vi (May just be labelled IOMMU in its bios). These features are well aged so even my older PC ~2011 PC can run this script and do PCIe passthrough just fine albeit at a slower performance than the hardware of today.
 
-On my 2020 PC build (3900x, DDR4@3600, single 2080Ti, M.2 SSD in the back slot *just for the guest*) It has no trouble playing the below titles in a VM with ease:
+Also don't forget to add the relevant AMD or Intel VFIO arguments to your kernel's boot arguments.
 
-* Overwatch
-* Mortal Kombat multiplayer
-* Battlefield 1,3,4,2042
+Even my partially retired desktop from 2011 (i7-3930K, ASUS SABERTOOTH X79, 2x16GB DDR3, 2x SATA SSDs mirrored) can run this script with the two older NVIDIA GPUs in it with a Looking Glass client window on its desktop to the guest.
 
+My 2020 PC (3900x, DDR4@3600, single 2080Ti, dedicated raw M.2 NVMe for the guest) has no trouble playing games such as Overwatch, MK11 Multiplayer and Battlefield One/3/4/2042 with ease.
 
-And as for performance I'm glad to be able to claim I can't tell the gameplay is inside a VM (without checking Device Manager of course).\
-There's no stutters or any other telltale signs that its not a real computer when vcpu pinning and host core isolation are done correctly.
-
+As for performance I'm glad I can claim its impossible to tell the difference from inside a VM launched with this (without checking Device Manager of course). There's no stutters or any other telltale signs that its not a real computer when vcpu pinning and host core isolation are done correctly. The dedicated NVMe for PCIe passthrough for booting the guest has been the most impactful piece of the puzzle in my experience. Disk IO latency is more than half the battle.
 
 # Why make this
-The #0 reason is "fun", I love my field and the 'edutainment' I've always gained from it fuels the fire; but while WINE and Proton have gotten me far over the past few years:
-  1. It lets me do a lot of "scratch pad" debugging/testing/kernel patching/hacking and other test which can be entirely forgotten in a blink.
-     (Or by hitting ^a^x in QEMU's terminal window which might be faster)
-  2. A game title may employ a driver-level Anti-Cheat solution, completely borking the multiplayer experience in Linux (Which you can't just throw at WINE).
-  3. Overall, a title may be known not to work in Linux despite best efforts and time commitment.
+The primary motivation is that its for fun. I love my field and the 'edutainment' I take in from this profession fuels the fire. WINE (Proton, etc) continue to improve and there's only so many titles which can't be played right in Linux anymore but for some good reasons to make this:
+  1. It lets me do a lot of "scratch pad" debugging/testing/kernel patching/hacking and other test which can be entirely forgotten in a blink. (Or by hitting ^a^x in QEMU's terminal window which is even faster)
+  2. A game title may employ a driver-level Anti-Cheat solution, completely borking the multiplayer experience in Linux (Which you can't just throw at WINE). While not every game will let you play in a VM without further tweaking a number of them are okay with this.
+  3. Despite the best efforts of the Linux community a title may be too stubborn to function without a native windows environment. Sometimes the path of least resistance is the best.
 
-Furthermore, instead of hardcoding a VM in libvirtd this script lets me take on less of a "set and forget" attitude, only to come back once a bios update or setting change causes PCI addresses to change (Common online complaint I see)
-I figured I'd write my own all-in-one manager for the job and editing what I want to send to a VM is a easy as pressing the up arrow in my Bash history and just changing the line calling this script with no troubles.
-In general this script has been very useful in my tinkering even outside VFIO gaming and at this point I swear by it for quick and easy screwing around just on the desktop.
+Primarily with this solution I see many tutorials copy pasting scripts and other libvirtd hooks hardcoding PCIe addresses and performing either redundant or potentially dangerous 'catch all' actions blindly. This script lets me avoid this "set and forget" attitude which helps prevent poor decisions such as blacklisting entire graphics drivers on a system which I see often soft-brick users computers, or hardcoding PCIe addresses in libvirtd which which often leads to a 'broken' (Must be reconfigured) libvirtd guest when another PCIe device gets plugged in overnight or a bios update shifts everything.
+
+I figured I'd write my own all-in-one here to help make modifying what hardware a guest receives as easy as typing a few extra words into the command invocation. Or backspacing them. All with the convenience of the up arrow in my shell history.
+
+In general this script has been very useful in my tinkering even outside VFIO and gaming. At this point I swear by it for quick and easy screwing around with QEMU just on the desktop. Especially for booting external drives or USB sticks in just a few keystrokes.
 
 # The script, arguments, examples and an installation example
 
