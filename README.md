@@ -263,26 +263,25 @@ This example would catch any:
   Especially useful for testing PCI regexes without unbinding things first try, but good for general safety.
 
 ## Notes and Gotchas.
-  - If you don't pass through a graphics card while your $DISPLAY variable is set (e.g. launching this script in a terminal in your current graphical session)
-    The script will give the VM a virtual screen and pop up like any other window so you can *see*.
-    You can prepend DISPLAY='' to the script command line to force the guest to have no virtual VGA screen. This is useful if you're using a NIX based OS which can take an argument such as console=ttyS0 to be accessible from the ter minal you launched from .
-  - The absolute minimum requirement to do anything useful is the `-image` and/or `-iso` arguments with OVMF installed. You can install an OS, extra drivers can always wait until later.
-  - The default networking mode is QEMU's user-mode networking (NAT through host IP).This is fine for most people but if you expect to be able to initiate outside connections to the guest, consider using `-bridge`
-  - This script makes use of VirtIO for networking. Unless you're passing through a USB/PCI network adapter and use `-nonet`, you'll want to install the VirtIO drivers into the guest before expecting virtual-networking to work.
-    If you can't use virtio drivers for whatever reason, you can specify -noVirtio, but the performance penalty will be noticible.
-  - The CPU topology this sets is 'host'. So the VM will think it has the host's CPU model. This is usually a good idea.
-  - Without specifying - The VM will use ALL host cores and HALF the host memory.
-      You can use -pinvcpus to cherry pick some host cpu threads for the VM to execute on and this will also set the VM's vcpu count appropriately to match.
-        This is very useful if the host produces enough load to cause stuttering in the VM during normal operation.
-        If your host doesn't have the cpu load headroom for a gaming guest or the VM experiences stuttering, Consider using -pinvcpus and isolateing the cores you pick for the guest.
+  - If you don't pass through a graphics card while your $DISPLAY variable is set when running the script with an existing graphical session the guest will be booted with a virtual display so it can be interacted with.
+    You can prepend `DISPLAY=''` or unset the varible the script will only attach a serial console. This is useful for Linux guests which can take the kernel argument `console=ttyS0` allowing you to interact with the guest through qemu's serial console right in the terminal.
+  - The minimum requirements to do anything useful is the `-image` and/or `-iso` arguments with OVMF installed. You can install an OS and include any driver ISOs you may need during the installation.
+  - The default networking mode is QEMU's user-mode networking (NAT through host IP). This is fine for most people but if you expect to be able to initiate outside connections to the guest, consider using `-bridge`
+  - This script makes use of VirtIO for networking. Unless you're passing through a USB/PCI network adapter and use `-nonet` you'll want to install the VirtIO drivers into the guest before expecting virtual-networking to work.
+    If you can't use virtio drivers for whatever reason, you can specify `-noVirtio`, at the cost of performance.
+  - The CPU topology this sets is 'host' so the guest will think it has the host's CPU model. This is usually a good idea.
+  - Without specifying vcpus or memory the guest will be given half of the host's total core count as vcpus and half of the host's memory.
+      You can use `-pinvcpus` to cherry pick some host cpu threads for the guest to execute on and this will also set the VM's vcpu count appropriately to match.
+        This is very useful if the host produces enough load to cause stuttering in the guest during normal operation.
+        If your host doesn't have the cpu load headroom for a gaming guest or the guest experiences stuttering consider using -pinvcpus and isolateing the cores you pick for the guest.
         
 ## The VM and Getting started with a fresh install of something (Windows? Linux? Direct kernel booting?)
 
-Right out the gate, if you're "feeling lucky" (Have prepared accordingly) you can start the script with your GPU, some usb input device like a keyboard so you can actually configure it, an installer ISO, an optional vbios if you're having initialization issues and just do it all in one take.
+If you're "feeling lucky" (Have prepared accordingly) you can start the script with your GPU, some usb input device such as your keyboard, an installer ISO and an optional vbios and install everything in one take.
 
-Try to include the virtio ISO too and use virtio hardware instead of setting -noVirtio, virtio devices perform much better than a lot of the traditional stuff (Theoretical 10Gbe link between host and guest for example) and this script creates an ioThread for the guest's disk activity when using virtio.
+Try to include the virtio ISO aiming use virtio hardware instead of setting `-noVirtio`. VirtIO devices perform much better than emulating traditional real hardware and networking is as fast as the host can facilitate, often >10Gbe where the CPU can push for it. This script creates an ioThread for the guest's disk when using virtio.
 
-Otherwise, feel free to start the script just specifying your -iso of choice with QEMU's default virtual GPU will pop up a window for you to get started in. Once you've installed everything you need you can shut the guest down and try GPU passthrough (With peripherals!)
+Otherwise feel free to start the script just specifying your `-iso` of choice with QEMU's default virtual GPU which will pop up a window to get started with. Once you've installed everything you need you can shut the guest down and try GPU passthrough with some peripherals.
 
 If you've already isolated a GPU for the guest (Explicitly isolated from boot, often also involves telling the bios which GPU to use/ignore) or have a patched vbios ready to specify with -vbios so the guest can re-initialize the card for itself then you too can start the install process with the card included from install. You'll want to passthrough at least a keyboard with -usb, or you can specify 'USB' in the -PCI argument regex to capture ALL of your hosts USB card inputs with your GPU too. Passing through entire USB/SATA/NVME controllers is ideal; much better performance than having the guest access the same devices through virtual hardware.
 
