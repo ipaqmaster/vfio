@@ -23,7 +23,7 @@ It:
   * Safely warns or fails if a critical environment disrepency is detected such as VT-d/IOMMU not being enabled in the bios, or boot flags. Among other environment catches before running itself into a wall.
 
   * Takes an optional regular expression of PCI and USB devices to pass to the VM when starting it.
-      * My favorite is `-PCI 'NVIDIA|USB'` to give it my graphics card with all host USB controllers on this single-gpu host of mine)
+      * My favorite is `-PCI 'NVIDIA|USB'` to give it my graphics card with all host USB controllers on m single-gpu host.
 
   * Takes as many virtual disks or iso's as you want to pass in with a QEMU iothread for each virtual disk.
 
@@ -66,17 +66,11 @@ It:
 
 This script has been designed on and for Archlinux however is mostly generic and the tools it relies on can be added to any system with whichever package manager is supplied. It will work just fine on any distro shipping a modern kernel and qemu binary. At worst some distros may store OVMF_CODE.fd elsewhere and its path will have to be specified with the `-bios` argument - I'll likely add add an array of well-known locations later so those on other distros don't have to specify that.
 
-I've also confirmed that this works on Ubuntu 20.04 and 18.04 as well - But again, it'll work on anything shipping modern kernel and qemu versions.
-
-For PCIe passthrough specifically the host will need to support either Intel's VT-d or AMD-Vi (May just be labelled IOMMU in its bios). These features are well aged so even my older PC ~2011 PC can run this script and do PCIe passthrough just fine albeit at a slower performance than the hardware of today.
-
-Also don't forget to add the relevant AMD or Intel VFIO arguments to your kernel's boot arguments.
+I've also confirmed that this works on Ubuntu 20.04 and 18.04 as well - But again, it'll work on anything shipping modern kernel and qemu versions. For PCIe passthrough specifically the host will need to support either Intel's VT-d or AMD-Vi (May just be labelled IOMMU in its bios). These features are well aged so even my older PC ~2011 PC can run this script and do PCIe passthrough just fine albeit at a slower performance than the hardware of today. Just don't forget to add the relevant AMD or Intel VFIO arguments to your kernel's boot arguments.
 
 Even my partially retired desktop from 2011 (i7-3930K, ASUS SABERTOOTH X79, 2x16GB DDR3, 2x SATA SSDs mirrored) can run this script with the two older NVIDIA GPUs in it with a Looking Glass client window on its desktop to the guest.
 
-My 2020 PC (3900x, DDR4@3600, single 2080Ti, dedicated raw M.2 NVMe for the guest) has no trouble playing games such as Overwatch, MK11 Multiplayer and Battlefield One/3/4/2042 with ease.
-
-As for performance I'm glad I can claim its impossible to tell the difference from inside a VM launched with this (without checking Device Manager of course). There's no stutters or any other telltale signs that its not a real computer when vcpu pinning and host core isolation are done correctly. The dedicated NVMe for PCIe passthrough for booting the guest has been the most impactful piece of the puzzle in my experience. Disk IO latency is more than half the battle.
+My 2020 PC (3900x, DDR4@3600, single 2080Ti, dedicated M.2 NVMe for the guest) has no trouble playing games such as Overwatch, MK11 Multiplayer and Battlefield One/3/4/2042 in a fully seamless experience. The VM feels like a real computer (without checking Device Manager and seeing virtual hardware). There's no stutters or telltale signs that its not a real computer nor under heavy load when vcpu pinning and host core isolation are done correctly. The dedicated NVMe for PCIe passthrough for booting the guest has been the most impactful piece of the puzzle in my experience. Disk IO latency is more than half the battle.
 
 # Why make this
 The primary motivation is that its for fun. I love my field and the 'edutainment' I take in from this profession fuels the fire. WINE (Proton, etc) continue to improve and there's only so many titles which can't be played right in Linux anymore but for some good reasons to make this:
