@@ -43,7 +43,7 @@ function printHelp {
   printer "    Useful for a fresh Win install where you don't have the virtio iso available yet or wish to give the guest physical networking hardware"
   printer "    Also good for general kernel hackery where the virtio drivers aren't in the kernel or initramfs causing a panic.\n"
 
-  printer "  ${colors[cyan]}-bios /usr/share/ovmf/x64/OVMF_CODE.secboot.4m.fd"
+  printer "  ${colors[cyan]}-bios /usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd"
   printer "    Manually specify a bios for qemu to use. Required if the script cannot automatically find one."
 
   printer "  ${colors[cyan]}-noBios / -legacy / -legacyboot"
@@ -1302,8 +1302,8 @@ fi
   # Eval biosPath
 if [[ -z "$biosPath" ]]
 then
-  defaultBiosPath="/usr/share/ovmf/x64/OVMF_CODE.fd"
-  defaultSecbootBiosPath="/usr/share/ovmf/x64/OVMF_CODE.secboot.4m.fd"
+  defaultBiosPath="/usr/share/edk2/x64/OVMF_CODE.4m.fd"
+  defaultSecbootBiosPath="/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd"
   [ -n "$secureBoot" ] && defaultBiosPath="$defaultSecbootBiosPath"
   if [[ ! -f "$defaultBiosPath" ]]
   then
