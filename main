@@ -1324,12 +1324,12 @@ elif [ -n "$biosVars" ]
 then
   if [ ! -f "$biosVars" ]
   then
-    printer "${colors[red]}-biospath\tdoesn't appear to exist: ${colors[none]}\t${biosPath}"
+    printer "${colors[red]}-biosvars\tvar file doesn't seem to exist:\t\t${colors[none]}\t${biosVars}"
     ((++expectLaunchIssue))
+  else
+    permissionsManager takeown $biosVars
+    printer "${colors[green]}-biosvars\tspecified, using for this VM:\t\t\t${colors[none]}${biosVars}"
   fi
-
-  permissionsManager takeown $biosVars
-  printer "${colors[green]}-biosvars\tspecified, using for this VM:\t\t\t${colors[none]}${biosVars}"
 fi
 
   # Eval kernel/initrd/append args if included
