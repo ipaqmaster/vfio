@@ -37,6 +37,9 @@ function printHelp {
 
   printer "Valid example arguments: [ ${colors[blue]}There's more in the README.md! ${colors[none]}]\n"
 
+  printer "  ${colors[cyan]}-agents"
+  printer "    Enables -qemu-agent and -spice"
+
   printer "  ${colors[cyan]}-qemu-agent|-qemuagent|-qemu"
   printer "    Enable guest hardware components for communicating with the QEMU Guest Agent (If installed and running in the guest)"
   printer "    Can also be manually interfaced with via 'socat unix-connect:/tmp/uuidHere.qga.socket readline'"
@@ -1007,6 +1010,11 @@ if [[ -z "$@" ]] ; then echo "No args seen. Printing help" ; printHelp ; fi
 while [ $# -gt 0 ]
 do
   case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
+    -agents)
+      qemuAgent=1
+      Spice=1
+      addUsbController=1
+    ;;
     -spice)
       Spice=1
       addUsbController=1
