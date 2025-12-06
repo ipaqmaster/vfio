@@ -37,6 +37,11 @@ function printHelp {
 
   printer "Valid example arguments: [ ${colors[blue]}There's more in the README.md! ${colors[none]}]\n"
 
+  printer "  ${colors[cyan]}-qemu-agent|-qemuagent|-qemu"
+  printer "    Enable guest hardware components for communicating with the QEMU Guest Agent (If installed and running in the guest)"
+  printer "    Can also be manually interfaced with via 'socat unix-connect:/tmp/uuidHere.qga.socket readline'"
+  printer "    while this script is running"
+
   printer "  ${colors[cyan]}-spice"
   printer "    Enable a spice socket for USB passthrough, automatic VM resolution resizing, clipboard sharing and other goodies"
   printer "    Sets display=none and spawns a remote-viewer window automatically connecting to the guest's spice socket in /tmp"
@@ -1006,6 +1011,9 @@ do
       Spice=1
       addUsbController=1
     ;;
+    -qemuagent|-qemu-agent|-qemu)
+      qemuAgent=1
+    ;;
     -append|-cmdline)
       append="$2"
       shift
@@ -1683,6 +1691,15 @@ then
   lgArgs+=" -object memory-backend-file,id=lgMemory0,share=on,mem-path=/dev/shm/looking-glass,size=64M" # Memory currently hardcoded to 64M, can be changed in this script if needed. Plan to take resolution as an argument in future.
   lgArgs+=" -device ivshmem-plain,id=shmem0,memdev=lgMemory0,id=lookingglass"
   Spice=1
+fi
+
+if [ -n "${qemuAgent}" ]
+then
+  printer "${colors[green]}-qemu-agent\tspecified. QEMU Guest Agent socket will be added."
+  qgaSocket="/tmp/$(getVmUUID).qga.socket"
+  agentArgs+=" -chardev socket,path=${qgaSocket},server=on,wait=off,id=qga0"
+  agentArgs+=" -device virtio-serial-pci"
+  agentArgs+=" -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"
 fi
 
 # Also called by lookingGlass if used
