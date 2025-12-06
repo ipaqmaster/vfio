@@ -37,6 +37,9 @@ function printHelp {
 
   printer "Valid example arguments: [ ${colors[blue]}There's more in the README.md! ${colors[none]}]\n"
 
+  printer "  ${colors[cyan]}-spice"
+  printer "    Enable a spice socket for USB passthrough, automatic VM resolution resizing, clipboard sharing and other goodies"
+  printer "    Sets display=none and spawns a remote-viewer window automatically connecting to the guest's spice socket in /tmp"
 
   printer "  ${colors[cyan]}-avoidVirtio / -novirtio"
   printer "    Intentionally avoid virtio qemu hardware."
@@ -223,6 +226,14 @@ function do_cleanup {
   fi
   [ -f '/dev/shm/looking-glass' ] && rm -fv /dev/shm/looking-glass
   [ -n "$swtpmUUID" ] && { kill $swtpmPid >/dev/null 2>&1 ; find /tmp/${swtpmUUID}/ -type f -delete; rmdir /tmp/${swtpmUUID} ;}
+
+  if [ -n "${Spice}" ] && [ -n "${spiceSocket}" ]
+  then
+    if [ -S ${spiceSocket} ]
+    then
+      rm "${spiceSocket}"
+    fi
+  fi
 
   printer "${colors[green]}Cleanup complete."
   exit
@@ -491,7 +502,6 @@ function enumerateUSBs { # Generate usb related arguments for the guest.
   [ -n "$expectLaunchIssue" ] && ! isDry && return 0 # No action if issue present
   echo "USB:"
   lsusbOutput="$(lsusb)"
-  usbArgs="-device qemu-xhci" # Add a backwards compatable xhci USB3 controller to the guest by default
   USBDevices="$(grep -E "$usbREGEX" <<<"$lsusbOutput")"
 
   while read USBDevice
@@ -992,6 +1002,10 @@ if [[ -z "$@" ]] ; then echo "No args seen. Printing help" ; printHelp ; fi
 while [ $# -gt 0 ]
 do
   case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
+    -spice)
+      Spice=1
+      addUsbController=1
+    ;;
     -append|-cmdline)
       append="$2"
       shift
@@ -1096,6 +1110,7 @@ do
     ;;
     -looking-glass|-lookingglass|-lg)
       lookingglass="1"
+      Spice=1
     ;;
     -memory|-mem|-m)
       memoryArgs="$2"
@@ -1153,6 +1168,7 @@ do
     ;;
     -usb)
       usbREGEX="$2"
+      addUsbController=1
       shift
     ;;
     -win11)
@@ -1172,6 +1188,14 @@ do
   shift
 done
 
+function getVmUUID {
+  # A unique string to identify this VM and some of its devices when building arguments
+  if [ -z "${vmUUID}" ]
+  then
+    vmUUID="$(tr -dc 'a-zA-Z' < /dev/urandom | head -c 6)"
+  fi
+  echo "${vmUUID}"
+}
 
 # ____                 _____ _ _       _     _
 #|  _ \ _ __ ___      |  ___| (_) __ _| |__ | |_
@@ -1202,6 +1226,7 @@ deviceTypes[net]='virtio-net'
 deviceTypes[scsiController]='virtio-blk-pci'
 deviceTypes[vga]='virtio'
 deviceTypes[serial]='virtio-serial'
+deviceTypes[display]='sdl'
 
 
 if [ -n "$win11" ]
@@ -1640,33 +1665,80 @@ then
   sleep 3
 fi
 
+if [ -n "$lookingglass" ] || [ -n "${Spice}" ]
+then
+  # Set some info
+  spiceName=spice
+  spiceSocket="/tmp/$(getVmUUID).${spiceName}.socket"
+  remoteViewerCommand="remote-viewer spice+unix://${spiceSocket}"
+fi
+
 if [ -n "$lookingglass" ]
 then
-  spicePort=5900
-  printer "${colors[green]}-lookingglass\tspecified, we'll start qemu with a spice server and shared memory for it."
-  if ss -nnlp | grep -q $spicePort
-  then
-    count=0
-    while ss -nnlp | grep -q $spicePort
-    do
-      ((++spicePort)) ; ((++count))
-      if [ $count -ge 100 ]; then echo "This is either a bug or you have too many spice-enabled VMs" ; break ; fi
-    done
-  printer "${colors[yellow]}\t\tSpice port already in use, we will use port $spicePort for this VM instead. Just keep this in mind when using LG."
-  printer "\n\t\tlooking-glass-client -c 127.0.0.1 -p $spicePort."
-  fi
+  printer "${colors[green]}-looking-glass\tspecified. Will enable and launch with that."
+  #looking_glass_client_command="looking-glass-client -c ${spiceSocket} -p 0 spice:clipboard=yes spice:clipboardToVM=yes spice:clipboardToLocal=yes spice:audio=yes"
+  looking_glass_client_command="looking-glass-client -c ${spiceSocket} -p 0"
+  printer "${colors[green]}\t\t\tFor manual launching: ${colors[blue]}${looking_glass_client_command}"
 
-  # Bad way to do this but wanted to keep them readable individually
   lgArgs+=" -object memory-backend-file,id=lgMemory0,share=on,mem-path=/dev/shm/looking-glass,size=64M" # Memory currently hardcoded to 64M, can be changed in this script if needed. Plan to take resolution as an argument in future.
   lgArgs+=" -device ivshmem-plain,id=shmem0,memdev=lgMemory0,id=lookingglass"
-  lgArgs+=" -chardev spicevmc,id=charchannel0,name=vdagent"
-  lgArgs+=" -device ${deviceTypes[serial]}"
-  lgArgs+=" -chardev socket,path=/dev/shm/vmsocket,server=on,wait=off,id=vmsocket"
-  lgArgs+=" -device virtserialport,nr=1,chardev=charchannel0,id=channel0,name=com.redhat.spice.0"
-  lgArgs+=" -audiodev id=audio1,driver=spice"
-  lgArgs+=" -spice port=${spicePort},addr=127.0.0.1,disable-ticketing=on,image-compression=off,seamless-migration=on"
-  lgArgs+=" -chardev spicevmc,id=charredir0,name=usbredir"
-  lgArgs+=" -chardev spicevmc,id=charredir1,name=usbredir"
+  Spice=1
+fi
+
+# Also called by lookingGlass if used
+if [ -n "${Spice}" ]
+then
+
+  # spice-app makes qemu set up its own spice parameters. We want to spawn our own remote-viewer process.
+  deviceTypes[display]='none'
+
+  # qxl seems to support automatic guest display resizing with the least issues.
+  deviceTypes[vga]='qxl'
+
+  # If looking glass is to be used, assume we don't want a virtual video card or display and that PCIe passthrough of a video device will be done.
+  # Should just call isGpu early to check and support both use-cases.
+  if [ -n "$lookingglass" ]
+  then
+    deviceTypes[vga]='none' # No virtual video card when looking glass is to be used.
+  fi
+
+  printer "${colors[green]}-spice\t\tspecified. Will add components for Spice."
+  printer "${colors[green]}\t\tEnables clipboard sharing, automatic resolution resizing and -vga qxl for supporting this."
+  printer "${colors[blue]}\t\t\tIf you close spice you can reconnect to this VM's socket with:"
+  printer "${colors[blue]}\t\t\t${remoteViewerCommand}"
+  printer "${colors[blue]}\t\t\tOr kill the guest with Ctrl-A then X in this terminal. (Unsafe shutdown)"
+  printer "${colors[blue]}\t\t\tOr Ctrl-A then C in this terminal and running the system_powerdown command (If supported)."
+
+  ## Spice backend
+
+  # Add a serial device for this to take place on
+  #agentArgs+=" -device ${deviceTypes[serial]}"
+  agentArgs+=" -device virtio-serial-pci"
+
+  # Listener
+  #agentArgs+=" -spice port=${spicePort},addr=127.0.0.1,disable-ticketing=on,image-compression=off,seamless-migration=on"
+  #agentArgs+=" -spice unix=on,addr=${spiceSocket},disable-ticketing=on,image-compression=off,seamless-migration=on"
+  agentArgs+=" -spice unix=on,addr=${spiceSocket},disable-ticketing=on,image-compression=off,seamless-migration=on"
+
+  # vdagent spicevmc channel
+  agentArgs+=" -chardev spicevmc,id=vdagent,name=vdagent"
+
+  # For lookingglass, headless spice
+  #agentArgs+=" -chardev socket,path=${spiceSocket},server=on,wait=off,id=vmsocket"
+  #agentArgs+=" -device virtserialport,nr=1,chardev=spicechannel0,id=channel0,name=com.redhat.spice.0"
+  agentArgs+=" -device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
+
+  # Support up to 4 passed through usb devices out of the box.
+  # For anything more than casual testing or a quick usb flash drive this is a bad idea.
+  # Consider PCIe passthrough for serious device passthroguh where possible.
+  for i in {1..4}
+  do
+    agentArgs+=" -chardev spicevmc,name=usbredir,id=usbredirchardev${i} -device usb-redir,chardev=usbredirchardev${i},id=usbredirdev${i}"
+  done
+
+
+
+
 fi
 
 if [ -n "$extras" ]
@@ -1709,11 +1781,13 @@ fi
 
 
   # Remove any leading/trailing pipes from the regex just in case.
-if [ -n "$usbREGEX" ]; then usbREGEX=$(regexCleanup "$usbREGEX") ; fi
-if [ -n "$pciREGEX" ]; then pciREGEX=$(regexCleanup "$pciREGEX") ; fi
+  #
+if [ -n "$usbREGEX" ];         then usbREGEX=$(regexCleanup "$usbREGEX"); fi
+if [ -n "$pciREGEX" ];         then pciREGEX=$(regexCleanup "$pciREGEX"); fi
 
-if [ -n "$usbREGEX" ]; then enumerateUSBs ; fi
-if [ -n "$pciREGEX" ]; then enumeratePCIs unbind vfiobind ; fi
+if [ -n "$addUsbController" ]; then usbArgs="-device qemu-xhci"         ; fi # Add a USB3 controller.
+if [ -n "$usbREGEX" ];         then enumerateUSBs                       ; fi
+if [ -n "$pciREGEX" ];         then enumeratePCIs unbind vfiobind       ; fi
 
 if [ -n "${killedCmdlines}" ]
 then
@@ -1735,7 +1809,7 @@ fi
 if [ -z "$guestGetsGPU" ] && [[ -n "$DISPLAY" ]]
 then
   printer  "${colors[green]}Guest has no GPU but \$DISPLAY variable is set [$DISPLAY]. Giving it a virtual screen for this run."
-  coreArgs+=" -display sdl -vga ${deviceTypes[vga]}" # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
+  coreArgs+=" -display ${deviceTypes[display]} -vga ${deviceTypes[vga]}" # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
 elif [ -n "$guestGetsGPU" ]
 then
   printer  "${colors[green]}Guest will get a PCI gpu, no virtual monitor will be attached."
@@ -1784,18 +1858,30 @@ then
   if [ -n "$kernelArgs" ] ; then printer "Direct Kernel Boot Args:\n${colors[blue]}${kernelArgs}" ; fi
   if [ -n "$TPMArgs" ]    ; then printer "TPM:\n${colors[blue]}${TPMArgs}"                        ; fi
   if [ -n "$extras" ]     ; then printer "Extras:\n${colors[blue]}${extras}"                      ; fi
+  if [ -n "${agentArgs}" ]; then printer "Agent:\n${colors[blue]}${agentArgs}"                    ; fi
   printer "\nRun the script with the same arguments again and include ${colors[red]}-run${colors[none]} to actually pass these to qemu-system-x86_64\n"
   exit 0
 else
   sudo prlimit --pid $$ --memlock=unlimited:unlimited
   set -m # Allow scripted bash job controls (fg, bg, etc)
   echo -ne "Starting qemu...\n\n"
-  eval "qemu-system-x86_64 ${coreArgs} ${hugeArgs} ${networkArgs} ${usbArgs} ${pciArgs} ${lgArgs} ${kernelArgs} ${TPMArgs} ${extras} &"
+  eval "qemu-system-x86_64 ${coreArgs} ${hugeArgs} ${networkArgs} ${usbArgs} ${pciArgs} ${lgArgs} ${kernelArgs} ${TPMArgs} ${extras} ${agentArgs} &"
   qemuPid=$!
+  qemuJob=$(jobs -l | grep ${qemuPid} | awk -F'[][]' '{print $2}')
   echo qemu pid is $qemuPid
   sudo chrt -p 1 -p $qemuPid >/dev/null                  # Set qemus threads to have high priority
   if [ -n "$vcpuPinningAfterQemuStart" ]; then pinVcpus $qemuPid & sleep 1 ; fi
-  fg # Bring qemu console into foreground
+
+  if [ -n "${looking_glass_client_command}" ]
+  then
+    ${looking_glass_client_command} & # Open looking-glass-client in the background if enabled
+  elif [ -n "${remoteViewerCommand}" ]
+  then
+    ${remoteViewerCommand} & # Open remote-viewer in the background if -spice is in use
+  fi
+
+  # Bring qemu into the foreground for access to the console
+  fg %${qemuJob}
 fi
 
 
