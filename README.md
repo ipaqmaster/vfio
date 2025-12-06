@@ -88,6 +88,11 @@ In general this script has been very useful in my tinkering even outside VFIO an
 
 ## General usage arguments
 
+
+`-agents`
+
+  If set, sets -qemu-agent and -spice, enabling both during VM runtime. See their own flags below.
+
 `-avoidVirtio` / `-noVirtio`
 
   If set, tries to pick more traditional QEMU devices for the best compatibility with a booting guest.
@@ -186,6 +191,16 @@ Optionally pass a kernel file either self compiled or straight out of /boot to t
 `-usb 'AT2020USB|SteelSeries|Ducky|Xbox|1425:5769'`
 
    If set, the script enumerates `lsusb` with this regex and generates QEMU arguments for passing them through when the VM starts.
+
+`-qemu-agent`, `-qemuagent`, `-qemu`
+
+    Enable guest hardware components for communicating with the QEMU Guest Agent (If installed and running in the guest)
+    Can also be manually interfaced with via 'socat unix-connect:/tmp/uuidHere.qga.socket readline' while this script is running.
+
+`-spice`
+
+    Enable a spice socket for USB passthrough, automatic VM resolution resizing, clipboard sharing and other goodies
+    Sets display=none and spawns a remote-viewer window automatically connecting to the guest's spice socket in /tmp
 
 This example would catch any:
      
