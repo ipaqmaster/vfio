@@ -1,0 +1,354 @@
+{
+  "_description": "A script for running QEMU with optional PCIe/USB passthrough and other goodies.",
+  "arguments": [
+    {
+      "option_strings": [
+        "--agents"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Enables -qemu-agent and -spice"
+    },
+    {
+      "option_strings": [
+        "--qemu-agent",
+        "--qemuagent",
+        "--qemu"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Enable guest hardware components for communicating with the QEMU Guest Agent (If installed and running in the guest). The resulting socket can also be manually interfaced with via 'socat unix-connect:/tmp/uuidHere.qga.socket readline' while this script is running."
+    },
+    {
+      "option_strings": [
+        "--spice"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Enable a spice socket for USB passthrough, automatic VM resolution resizing, clipboard sharing and other goodies. Sets display=none and spawns a remote-viewer window automatically connecting to the guest's spice socket in /tmp"
+    },
+    {
+      "option_strings": [
+        "--avoidVirtio",
+        "--noVirtio"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Avoid using virtio hardware for this QEMU system. Useful for a fresh Win install where you don't have the virtio iso available yet or wish to give the guest physical networking hardware.\nAlso good for general kernel hackery where the virtio drivers aren't in the kernel or initramfs causing a panic."
+    },
+    {
+      "option_strings": [
+        "--debug"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Enable debug logging (--loglevel 7)"
+    },
+    {
+      "option_strings": [
+        "--bios"
+      ],
+      "type": "str",
+      "default": "/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd",
+      "help": "Manually specify a bios for qemu to use. Required if the script cannot automatically find one."
+    },
+    {
+      "option_strings": [
+        "--noBios",
+        "--legacy",
+        "--legacyboot"
+      ],
+      "default": false,
+      "action": "store_true",
+      "help": "Skip adding a pflash device for UEFI booting. This will boot in qemu's default BIOS mode instead of UEFI."
+    },
+    {
+      "option_strings": [
+        "--bios-vars"
+      ],
+      "type": "str",
+      "default": null,
+      "help": "Manually specify a bios variables file for qemu to use. (Required for --secureboot and/or --win11).\nYou must copy the default OVMF_VARS.fd on your system to a new unique path for your VM OS."
+    },
+    {
+      "option_strings": [
+        "--ignore-vtconn",
+        "--ignore-framebuffer",
+        "--leave-fb",
+        "--leave-framebuffer",
+        "--leave-vtconn"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Leave the vtcon and efi-framebuffer bindings as is.\nAdded to work around kernel bug 216475 temporarily (https://bugzilla.kernel.org/show_bug.cgi?id=216475)"
+    },
+    {
+      "option_strings": [
+        "--image",
+        "--file"
+      ],
+      "default": [],
+      "nargs": "+",
+      "help": "A file or blockdevice to be made available to the guest. Can be specified multiple times."
+    },
+    {
+      "option_strings": [
+        "--image-format",
+        "--file-format"
+      ],
+      "default": [],
+      "nargs": "+",
+      "help": "A QEMU-recognised disk format. Must be specified after each invocation of --image.\nCan be omitted for virtual disk files as QEMU will guess the format. But it won't guess 'raw' fully."
+    },
+    {
+      "option_strings": [
+        "--nvme"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Present storage to the guest virtualizing NVMe rather than using virtio-blk-pci or ide-hd (with -avoidVirtio).\nThis can prove useful when booting a physical installation on NVMe which lacks other storage drivers in their bootloader\nAnd general permanent P2V scenarios. For long term usage I strongly recommend installing the virtio driver on the guest instead."
+    },
+    {
+      "option_strings": [
+        "--loglevel"
+      ],
+      "type": "int",
+      "default": 2,
+      "help": "Set loglevel. Default 2 (stdout, warnings and errors), using --debug sets it to the max value of 7."
+    },
+    {
+      "option_strings": [
+        "--cmdline"
+      ],
+      "default": null,
+      "type": "str",
+      "help": "Optonally boot directly with a specific cmdline (Used with --kernel and optionally --initrd)"
+    },
+    {
+      "option_strings": [
+        "--kernel"
+      ],
+      "default": null,
+      "type": "str",
+      "help": "Optonally boot directly with a specific kernel  (Used with --cmdline and optionally --initrd)"
+    },
+    {
+      "option_strings": [
+        "--initrd"
+      ],
+      "default": null,
+      "type": "str",
+      "help": "Optonally boot directly with a specific initrd  (Used with --kernel and optionally --cmdline)"
+    },
+    {
+      "option_strings": [
+        "--iso",
+        "--isos"
+      ],
+      "default": [],
+      "nargs": "+",
+      "type": "str",
+      "help": "One or more ISOs to present to the guest."
+    },
+    {
+      "option_strings": [
+        "--iommu",
+        "--iommu-groups",
+        "--iommu-grouping"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "(Try to) Print IOMMU Groups then exit. Useful for the -PCI arg."
+    },
+    {
+      "option_strings": [
+        "--cpu-threads",
+        "--show-pairs",
+        "--show-threads",
+        "--show-cpu"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "(Try to) Print thread parings for each core.\nUseful if you plan to use -pinvcpus or plan to update your kernel arguments for isolation"
+    },
+    {
+      "option_strings": [
+        "--bridge"
+      ],
+      "type": "str",
+      "default": null,
+      "help": "Attach the VM's tap interface to a new or existing bridge by name."
+    },
+    {
+      "option_strings": [
+        "--tap"
+      ],
+      "type": "str",
+      "default": null,
+      "help": "Attach the VM's network card to a new or existing tap interface by name."
+    },
+    {
+      "option_strings": [
+        "--host-interface"
+      ],
+      "type": "str",
+      "default": null,
+      "help": "Attach a host interface to the --bridge of the guest. Giving the VM a Layer 2 network presence.\nIf no network options are specified the default qemu NAT adapter will be used which is OK for most use-cases."
+    },
+    {
+      "option_strings": [
+        "--no-networking"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "If specified, the VM is not given a network adapter. Useful if you're passing a USB or PCI network card."
+    },
+    {
+      "option_strings": [
+        "--memory",
+        "--mem",
+        "--m"
+      ],
+      "type": "str",
+      "default": null,
+      "help": "Set how much memory the VM should have. By default it gets half of the host's total systme memory."
+    },
+    {
+      "option_strings": [
+        "--show-loglevel"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Print the loglevel at the beginning of each printed line (for tracing)"
+    },
+    {
+      "option_strings": [
+        "--hugepages"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Use hugepages. If none are allocated the script will attempt to allocate them on demand before booting the guest. It then releases them after it shuts down if they were allocated by the script on demand. If your system has been switched on for a while hugepages may fail to allocate on demand. It's a good idea to specify --memory when using this."
+    },
+    {
+      "option_strings": [
+        "--hyperv"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Enable hyper-v enlightenments for nested virtualization.\nCan help invasive anticheats play along however HyperV will need to be enabled in the guest's Features. In general this is also good for Windows guest performance."
+    },
+    {
+      "option_strings": [
+        "--host-audio",
+        "--audio",
+        "--sound"
+      ],
+      "action": "store_true",
+      "default": null,
+      "help": "Enable an audiodev for VM audio to go through the host. Detects pipewire or pulseaudio and starts their relevant user service if needed."
+    },
+    {
+      "option_strings": [
+        "--usb-regex",
+        "--usb"
+      ],
+      "type": "str",
+      "default": null,
+      "help": "A regex for lsusb parsing. Matches against device lines from lsusb output."
+    },
+    {
+      "option_strings": [
+        "--pci-regex",
+        "--pci"
+      ],
+      "type": "str",
+      "default": null,
+      "help": "A regex for lspci parsing. Matches against device lines from lspci output."
+    },
+    {
+      "option_strings": [
+        "--looking-glass"
+      ],
+      "default": null,
+      "action": "store_true",
+      "help": "Adds a 64MB shared memory module for the Looking Glass project and a spice server onto the guest for input from host during Looking Glass usage."
+    },
+    {
+      "option_strings": [
+        "--extras"
+      ],
+      "default": [],
+      "nargs": "+",
+      "help": "Accepts additional arguments to arbitrarily pass to QEMU. Highly useful to add more QEMU features on the fly without having to implement them into the script right away."
+    },
+    {
+      "option_strings": [
+        "--romfile",
+        "--rom-file",
+				"--vbios"
+      ],
+      "type": "str",
+      "default": null,
+      "help": "Accepts a file path to a rom file to use on any detected GPU during -pci argument processing. You should check the vbios dump you're about to use is safe before using it on a GPU, rom-parser is a good project for this."
+    },
+    {
+      "option_strings": [
+        "--pinvcpus",
+        "--pin-vcpus",
+        "--pin-threads"
+      ],
+      "default": [],
+      "nargs": "+",
+      "help": "A comma delimited list of host threads the Guest's vcpus are allowed to execute on.\n(Setting this also shapes the guest CPU topology to match.)\nIf you've configured core isolation on the host, this is the argument will be important."
+    },
+    {
+      "option_strings": [
+        "--verbose"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Enable verbose logging (--loglevel 4)"
+    },
+    {
+      "option_strings": [
+        "--port-forward"
+      ],
+      "default": [],
+      "nargs": "+",
+      "help": "Takes one or more arguments like 'tcp:33389:3389' 'tcp:2222:22' to port forward host ports to the guest.\nOnly applicable when not using a bridge (The default User-mode networking)."
+    },
+    { 
+      "option_strings": [
+        "--quiet",
+				"--silent"
+      ],
+      "default": [],
+      "nargs": "+",
+      "help": "Try to be quiet, only print if we have an error."
+    },
+    {
+      "option_strings": [
+        "--secureboot"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Try to search for the secboot version of your system's OVMF_CODE for VM usage.\nYou must also provide -biosvars for your secureboot-enabled VM to use."
+    },
+    {
+      "option_strings": [
+        "--tpm"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Start swtpm and have qemu use that for the guest's TPM needs (Added primarily for Win11 support)"
+    },
+    {
+      "option_strings": [
+        "--win11"
+      ],
+      "action": "store_true",
+      "default": false,
+      "help": "Automatically enables -tpm and -secureboot."
+    }
+  ]
+}
