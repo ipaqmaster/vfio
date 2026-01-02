@@ -223,7 +223,7 @@ function do_cleanup {
     if [ -n "$pciREGEX" ]
     then
       enumeratePCIs restorebind
-      if [ -n "$vtconUnboundThisSession" ]; then vtconBindings bind; fi 
+      if [ -n "$vtconUnboundThisSession" ]; then vtconBindings bind; fi
       if  [ "$dm" == "seen" ]; then echo "Attempting to restore display-manager..." ; sudo systemctl start display-manager ; fi # Start DM if seen before run.
     fi
 
@@ -292,7 +292,7 @@ function genTap { # Think of a free tap name.
 function networking {
   # A function for handling guest tap interfaces, bridge interfaces, host ethernet interfaces
   # and tying them all together, pre-existing or not.
- 
+
   # Do not act if there are run issues.
   [ -n "$expectLaunchIssue" ] && ! isDry && return 0
 
@@ -344,10 +344,10 @@ function networking {
         return 1
       fi
 
-      if [ -L /sys/class/net/${hostInt}/master ] 
+      if [ -L /sys/class/net/${hostInt}/master ]
       then
         printer "${colors[red]}\t\tHost interface ${hostInt} already belongs to a bridge. Refusing to modify its existing configuration." "fault"
-        brStartFault=1 
+        brStartFault=1
         return 1
       fi
 
@@ -356,7 +356,7 @@ function networking {
     fi
 
 
-    
+
 
     # If a bridge has been defined and exists we'll attach the tap interface to it.
     if [ -n "${bridge}" ]
@@ -365,7 +365,7 @@ function networking {
       then
         printer "${colors[green]}\t\tBridge ${bridge} exists, will attach ${tap} to that."
         bridgePreexists=1
-  
+
         # If it doesn't exist but a hostInt has been set we will create the bridge and attach the tap and host interface to it.
       elif [ -n "${hostInt}" ]
       then
@@ -377,7 +377,7 @@ function networking {
         printer "${colors[red]}\t\tRefusing to create a bridge interface for no reason." "fault"
         printer "${colors[red]}\t\tEither include a host interface with -hostint or drop the -bridge argument to use only a tap adapter." "fault"
         printer "${colors[red]}\t\tOr drop all networking arguments to use user-mode NAT networking." "fault"
-        brStartFault=1 
+        brStartFault=1
         return 1
       fi
     fi
@@ -437,7 +437,7 @@ function networking {
     # Take ownership of the tun special device for running qemu without root.
     permissionsManager takeown /dev/net/tun
 
-    # Attach our new tap interface to the bridge 
+    # Attach our new tap interface to the bridge
     if [ -n "${bridge}" ] # This check may not be required with the logic early in this function.
     then
       sudo ip link set ${tap} master ${bridge} && sudo ip link set ${tap} up
@@ -496,7 +496,7 @@ function networking {
 }
 
 function vtconBindings { # Toggles rendering to Ctrl+Alt+F[0-9]. Needs to be unhooked for GPU passthrough.
-  if ! isDry 
+  if ! isDry
   then
     [ -n "$ignoreVtconn" ] && return 0
     if [[ "$1" -eq 'bind' ]]; then bindBoolean="1"; bindState="$1" ; else bindBoolean="0" ; bindState="unbind" ; fi
@@ -544,7 +544,7 @@ function enumeratePCIs { # This makes arguments and also unbinds from drivers. O
     if [ -n "$processesUsingGpu" ]
     then
       processNamesUsingGpu="$(ps $processesUsingGpu)"
-      if [[ "$processNamesUsingGpu" = *"Xorg"* ]] 
+      if [[ "$processNamesUsingGpu" = *"Xorg"* ]]
       then
         printer "${colors[yellow]}    It appears Xorg has latched onto this GPU, cannot unbind from driver and give to guest without killing Xorg." "fault"
         if [ -z "$KILLX" ]
@@ -817,7 +817,7 @@ function printCpuThreads {
   unset processorArray
   declare -A processorArray
   eval $(awk '/^processor/ {thread=$NF;next} /^core/ { core=$NF ; printf "processorArray[" ; printf $NF ; printf "]+=" ; printf thread ; print "," }' /proc/cpuinfo)
-  
+
   printer "${colors[green]}Host has ${#processorArray[@]} cores. Below is the cpu thread pairs per core. Useful to know as a -pinvcpus visual aid:"
   coreIndex=0
   for core in $(tr ' ' '\n' <<< "${!processorArray[@]}" | sort -h | tr '\n' ' ')
@@ -876,7 +876,7 @@ function checkDependency {
 
 function checkKvmHypervisorEligibility {
   # Check for kvm module presence and host support. Try to self resolve any issues which pop up.
-  
+
   function cpuSupportsVirtualization { grep -Eqs "vmx|svm|0xc0f" /proc/cpuinfo ; return $? ;}
 
   function kernelModuleExists { modinfo $1 > /dev/null 2>&1 ; return $? ;}
@@ -927,7 +927,7 @@ function checkKvmHypervisorEligibility {
         KvmVendorModule=kvm
       ;;
     esac
-      
+
     if kernelModuleExists ${KvmVendorModule}
     then
       printer "Attempting modprobe of ${KvmVendorModule}..."
@@ -937,12 +937,12 @@ function checkKvmHypervisorEligibility {
         ((++expectLaunchIssue))
         if checkDmesgKvm
         then
-          printer "${colors[red]}Something else went wrong trying to get the kvm-relevant drivers active." 
+          printer "${colors[red]}Something else went wrong trying to get the kvm-relevant drivers active."
           printer "${colors[red]}Please check your dmesg output for more information on what specifically went wrong for kvm. (e.g. 'dmesg -t|grep kvm | sort -u')"
           ((++expectLaunchIssue))
           return 1
         else
-          : #((++expectLaunchIssue)) # Bad 
+          : #((++expectLaunchIssue)) # Bad
         fi
       fi
     else
@@ -970,17 +970,17 @@ function checkKvmHypervisorEligibility {
     printer "${colors[yellow]}kvm module doesn't appear to be active. Finding cause..."
     tryLoadKvmVendor
     [ -e /dev/kvm ] && printer "${colors[blue]}KVM ready."
-  fi 
+  fi
 }
 
 function checkLibraryExists {
   while [ $# -gt 0 ]
   do
-    case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in 
+    case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
       -library)
         library="$2"
         shift
-      ;;  
+      ;;
       -64)
         archPath="lib64"
         shift
@@ -993,7 +993,7 @@ done
 
   # May slow things down on a well established system. Should add a common lookup table for common distro locations.
   [ -n "$(find /usr/${archPath} -type f -name "${library}" 2>/dev/null)" ]
-  
+
   return $?
 }
 
@@ -1514,8 +1514,8 @@ then
 
   audioSystems=(pipewire pulseaudio)
   audioSystem="$(which ${audioSystems[@]} 2>/dev/null)"
-  if [ -z "${audioSystem}" ] 
-  then 
+  if [ -z "${audioSystem}" ]
+  then
     printer "${colors[red]}\t\tUnable to find an audio server supported by this script. (${audioSystems[@]})"
     ((++expectLaunchIssue))
   else
