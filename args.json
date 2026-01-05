@@ -349,6 +349,14 @@
       "action": "store_true",
       "default": false,
       "help": "Automatically enables -tpm and -secureboot."
+    },
+    {
+      "option_strings": [
+        "--run"
+      ],
+      "action": "store_true",
+      "default": false, 
+      "help": "Whether or not to run qemu after preparations and checks are finished."
     }
   ]
 }
