@@ -1,0 +1,1913 @@
+#!/bin/bash
+DRY=1   # Assume dry, '-run' flag will flip the bit later.
+echo "" # Professional padding
+
+# If the script is not outputting to a terminal, don't add colors (good for piping into 'less', among other commands)
+# Otherwise, color away.
+if [ -t 1 ]
+then
+  # Some colors
+  declare -A colors
+  colors[none]="\e[0m"
+  colors[red]="\e[31m"
+  colors[green]="\e[32m"
+  colors[yellow]="\e[33m"
+  colors[blue]="\e[34m"
+  colors[magenta]="\e[35m"
+  colors[cyan]="\e[36m"
+  colors[lightgray]="\e[37m"
+  colors[white]="\e[97m"
+fi
+
+# _____                 _   _
+#|  ___|   _ _ __   ___| |_(_) ___  _ __  ___
+#| |_ | | | | '_ \ / __| __| |/ _ \| '_ \/ __|
+#|  _|| |_| | | | | (__| |_| | (_) | | | \__ \
+#|_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
+#
+
+function printer {
+  if [ -z "$quiet" ] || [ "$2" == "fault" ] ; then echo -e "${1} ${colors[none]}" ; fi
+}
+
+function printHelp {
+  printer "This script exists to make vfio-related work less of a pain. Among other use-cases such as"
+  printer "for LiveCD or kernel/initramfs testing without having to setup an entire libvirt vm, quick throwaway environments for quick testing, checking if a physical drive will boot, PXE testing and imaging to physically attached drives and anything else with optional PCI/USB passthrough."
+  printer "Hopefully somebody finds it useful.\n"
+
+  printer "Valid example arguments: [ ${colors[blue]}There's more in the README.md! ${colors[none]}]\n"
+
+  printer "  ${colors[cyan]}-agents"
+  printer "    Enables -qemu-agent and -spice"
+
+  printer "  ${colors[cyan]}-qemu-agent|-qemuagent|-qemu"
+  printer "    Enable guest hardware components for communicating with the QEMU Guest Agent (If installed and running in the guest)"
+  printer "    Can also be manually interfaced with via 'socat unix-connect:/tmp/uuidHere.qga.socket readline'"
+  printer "    while this script is running"
+
+  printer "  ${colors[cyan]}-spice"
+  printer "    Enable a spice socket for USB passthrough, automatic VM resolution resizing, clipboard sharing and other goodies"
+  printer "    Sets display=none and spawns a remote-viewer window automatically connecting to the guest's spice socket in /tmp"
+
+  printer "  ${colors[cyan]}-avoidVirtio / -novirtio"
+  printer "    Intentionally avoid virtio qemu hardware."
+  printer "    Useful for a fresh Win install where you don't have the virtio iso available yet or wish to give the guest physical networking hardware"
+  printer "    Also good for general kernel hackery where the virtio drivers aren't in the kernel or initramfs causing a panic.\n"
+
+  printer "  ${colors[cyan]}-bios /usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd"
+  printer "    Manually specify a bios for qemu to use. Required if the script cannot automatically find one."
+
+  printer "  ${colors[cyan]}-noBios / -legacy / -legacyboot"
+  printer "    Skip adding a pflash device for UEFI booting. This will boot in qemu's default BIOS mode instead of UEFI."
+
+  printer "  ${colors[cyan]}-biosvars /tmp/OVMF_VARS.4m.fd"
+  printer "    Manually specify a bios variables file for qemu to use. Needed for Secureboot / Win11."
+  printer "    You must copy the default OVMF_VARS.fd on your system to a new unique path for your VM OS."
+
+  printer "  ${colors[cyan]}-ignorevtcon / -ignoreframebuffer / -leavefb / -leaveframebuffer / -leavevtcon"
+  printer "    Intentionally leave the vtcon and efi-framebuffer bindings as is."
+  printer "    Added to work around kernel bug 216475 temporarily (https://bugzilla.kernel.org/show_bug.cgi?id=216475)\n"
+
+  printer "  ${colors[cyan]}-image /dev/zvol/zpool/windows"
+  printer "    A file or blockdevice to be made available to the guest. Can be specified multiple times."
+  printer "  ${colors[cyan]}-imageformat/${colors[cyan]}-format [raw / qcow / vdi / etc]"
+  printer "    A QEMU-recognised disk format. Must be specified after each invocation of -image."
+  printer "    Can be omitted for virtual disk files as QEMU will guess the format. But it won't guess 'raw'"
+  printer "  ${colors[cyan]}-nvme"
+  printer "    Present storage to the guest virtualizing NVMe rather than using virtio-blk-pci or ide-hd (with -avoidVirtio)."
+  printer "    This can prove useful when booting a physical installation on NVMe which lacks other storage drivers in their bootloader"
+  printer "    And general permanent P2V scenarios. For long term usage I strongly recommend installing the virtio driver on the guest instead.\n"
+
+  printer "  ${colors[cyan]}-cmdline console=ttyS0 root=/dev/vda1"
+  printer "  ${colors[cyan]}-initrd /boot/initramfs.img"
+  printer "  ${colors[cyan]}-kernel /boot/vmlinuz-linux"
+  printer "    Optonally boot directly from a kernel file with a cmdline and optional initramfs if needed\n"
+
+  printer "  ${colors[cyan]}-iso /path/to/a/diskimage.iso"
+  printer "    If you're installing the OS for drivers you may wish to include this\n"
+
+  printer "  ${colors[cyan]}-iommu / -iommugroups / -iommugrouping"
+  printer "    (Try to) Print IOMMU Groups then exit. Useful for the -PCI arg.\n"
+
+  printer "  ${colors[cyan]}-cputhreads / -showpairs / -showthreads / -showcpu"
+  printer "    (Try to) Print thread parings for each core.\n"
+  printer "    Useful if you plan to use -pinvcpus or plan to update your kernel arguments for isolation"
+
+  printer "  ${colors[cyan]}-bridge br0\t\t${colors[none]}(Attach vm to a bridge with a new tap interface. Also creates the bridge if missing.)"
+  printer "  ${colors[cyan]}-tap/-interface tap1\t${colors[none]}(Attach the VM's network card to a new tap interface tap1 - or attaches to it if existing.)"
+  printer "  ${colors[cyan]}-hostint/-ethernet enp0s1\t${colors[none]}(Also attaches the specified host interface to the bridge when specified; allowing the VM true Layer 2 networking on the host LAN.)"
+  printer "    If no network options are specified the default qemu NAT adapter will be used which is OK for most use-cases.\n"
+
+  printer "  ${colors[cyan]}-nonet"
+  printer "    If specified, the VM is not given a network adapter. Useful if you're passing a USB or PCI network card.\n"
+
+  printer "  ${colors[cyan]}-memory 8192M / ${colors[cyan]}-memory 8G / ${colors[cyan]}-mem xxxxM / -m xT"
+  printer "    Set VM memory (Default is half of system total memory)\n"
+
+  printer "  ${colors[cyan]}-hugepages / ${colors[cyan]}-huge /optional/hugepage/mount"
+  printer "    Try to allocate hugepages for qemu with the -mem value specified."
+  printer "    If no hugepage mountpoint given as argument, tries /dev/hugepages which is often present."
+  printer "    Supports hugepage preallocation from boot time and will use existing pages if free."
+  printer "    (May want to specify -mem for this. Half of host ram may be too much.)\n"
+
+  printer "  ${colors[cyan]}-hyperv"
+  printer "    Enable hyper-v enlightenments for nested virtualization."
+  printer "    Can help invasive anticheats play along however HyperV will need to be enabled in the guest's Features.\n"
+
+  printer "  ${colors[cyan]}-hostaudio"
+  printer "    Enable an audiodev for VM audio to go through the host's pulseaudio server."
+  printer "    Will fail if pulseaudio is not installed on the host.\n"
+
+  printer "  ${colors[cyan]}-usb 'SteelSeries|Keyboard|Xbox|1234:5678'"
+  printer "    A regex for lsusb parsing. Matches against device lines from lsusb output.\n"
+
+  printer "  ${colors[cyan]}-pci 'Realtek|NVIDIA|10ec:8168'"
+  printer "    A regex for lspci parsing. Matches against device lines from lspci output.\n"
+
+  printer "  ${colors[cyan]}-looking-glass /  -lookingglass / -lg "
+  printer "    Adds a 64MB shared memory module for the Looking Glass project and a spice server onto the guest for input from host during Looking Glass usage.\n"
+
+  printer "  ${colors[cyan]}-extras '-device abc123,b,c,d=e' / -extras '-device AC97' "
+  printer "    Accepts a string for arbitrary extra qemu arguments. Highly useful when I want to use extra qemu features without having to implement them into the script right away.\n"
+
+  printer "  ${colors[cyan]}-romfile/-vbios path-to-vbios.bin"
+  printer "    Accepts a file path to a rom file to use on any detected GPU during -pci argument processing. You should check the vbios dump you're about to use is safe before using it on a GPU, rom-parser is a good project for this.\n"
+
+  printer "  ${colors[cyan]}-pinvcpus 0,1,2,3,4,5,6${colors[cyan]} / ${colors[cyan]}-pinvcpus 0,2,4,8"
+  printer "    A comma delimited list of host threads the Guest's vcpus are allowed to execute on."
+  printer "    (Setting this also shapes the guest CPU topology to match.)"
+  printer "    If you've configured core isolation on the host, this is the argument for you!\n"
+
+  printer "  ${colors[cyan]}-portforward tcp:2222:22 -portforward tcp:33389:3389"
+  printer "    A colon:separated argument with a protocol, host port and destination guest port for guest portforwarding."
+  printer "    Can be specified multiple times."
+  printer "    Only applicable when not using a bridge (The default User-mode networking).\n"
+
+  printer "  ${colors[cyan]}-quiet/-q/-silence/-s"
+  printer "    Try to be quiet, only print if we have an error.\n"
+
+  printer "  ${colors[cyan]}-secureboot"
+  printer "    Try to search for the secboot version of your system's OVMF_CODE for VM usage.\n"
+  printer "    You must also provide -biosvars for your secureboot-enabled VM to use.\n"
+
+  printer "  ${colors[cyan]}-tpm"
+  printer "    Start swtpm and have qemu use that for the guest's TPM needs (Added primarily for Win11 support)\n"
+
+  printer "  ${colors[cyan]}-win11"
+  printer "    Automatically enables -tpm and -secureboot.\n"
+
+
+  printer "Please see the README.md file for more information about the flags."
+  exit 1
+}
+
+function permissionsManager { # chown's things before qemu starts, but also tries to return them in the end.
+  isDry && return # Noop on dry runs
+
+  if ! declare -p Permissions >/dev/null 2>&1 ; then declare -g -A Permissions ; fi # Check array is ready for use.
+
+  if [ "$1" == "takeown" ] # Takes ownership of a file or dir with sudo
+  then
+    for path in "${@:2}"
+    do
+      originalOwner="$(stat -c %U ${path} 2>/dev/null)"
+      if [ "${originalOwner}" == "${USER}" ]
+      then
+        continue # If we already own this, do nothing.
+      else
+          # Take ownership but keep track
+        Permissions[${path}]=${originalOwner} ; sudo chown ${USER} ${path} 2>/dev/null
+      fi
+    done
+  elif [ "$1" == "return" ]
+  then
+    # Returns all stored in the array to original owner
+    for entry in ${!Permissions[@]}
+    do
+      originalOwner="${Permissions[$entry]}" ; sudo chown ${originalOwner} ${entry} 2>/dev/null
+    done
+  fi
+
+}
+
+ # Check if script is in dry mode.
+function isDry { if [ $DRY -eq 1 ] ; then return 0 ; else return 1 ; fi ;}
+
+function hostIsHyperthreaded { grep -qs ' ht ' /proc/cpuinfo ;}
+
+ # Read numeric value from meminfo
+function readMeminfo   { if [ -n "$1" ]; then grep -m1 "$1" /proc/meminfo | grep -Eo '[0-9]+'; fi ; }
+function readHugeInfo  { if [ -n "$1" ] && [ -n "$2" ]; then cat /sys/kernel/mm/hugepages/hugepages-${1}kB/${2}; fi ; }
+function writeHugeInfo { if [ -n "$1" ] && [ -n "$2" ]; then sudo tee /sys/kernel/mm/hugepages/hugepages-${1}kB/${2} > /dev/null; fi ; }
+
+function isGpu { if grep -o '\[VGA controller\]' <<<$(lspci -vnnn -s "$1") > /dev/null 2>&1 ; then return 0 ; else return 1 ; fi }
+
+function errorBindingTimeout {
+  if [ -n "$1" ]; then attemptedTask=$1 ; else attemptedTask="bind or unbind" ; fi
+  printer "${colors[red]}    The device  $fullBuspath ${colors[red]}// $vendorClass ${colors[red]} Was unable to $attemptedTask after 5 seconds, is something else using it?" "fault"
+  printer "${colors[red]}    (E.g This will happen to a GPU in use by X)" "fault"
+  printer "${colors[red]}    Giving up." "fault"
+  exit 1
+}
+
+  # Try to undo any mess we've caused at the end of a run
+function do_cleanup {
+  printer "\n${colors[yellow]}Cleaning up.."
+  permissionsManager return # Restore original permissions if any
+  if ! isDry
+  then
+      # Undo any custom networking
+    if [[ -n "${networking}" ]]; then networking stop ; fi
+
+      # Rebind the console and PCI devices if they were rebound
+    if [ -n "$pciREGEX" ]
+    then
+      enumeratePCIs restorebind
+      if [ -n "$vtconUnboundThisSession" ]; then vtconBindings bind; fi 
+      if  [ "$dm" == "seen" ]; then echo "Attempting to restore display-manager..." ; sudo systemctl start display-manager ; fi # Start DM if seen before run.
+    fi
+
+    if [ -n "$HUGEPAGES" ] && [ -n "$hugepagesSelfAllocated" ] # Clean up hugepages
+    then
+      echo 0 | writeHugeInfo ${hugepageSizeKB} nr_hugepages # pack up
+    fi
+  fi
+  [ -f '/dev/shm/looking-glass' ] && rm -fv /dev/shm/looking-glass
+  [ -n "$swtpmUUID" ] && { kill $swtpmPid >/dev/null 2>&1 ; find /tmp/${swtpmUUID}/ -type f -delete; rmdir /tmp/${swtpmUUID} ;}
+
+  if [ -n "${Spice}" ] && [ -n "${spiceSocket}" ]
+  then
+    if [ -S ${spiceSocket} ]
+    then
+      rm "${spiceSocket}"
+    fi
+  fi
+
+  printer "${colors[green]}Cleanup complete."
+  exit
+}
+
+function regexCleanup {
+  if [ -z "$@" ] ; then echo "No argument given to regexCleanup" ; return ; fi
+  REGEX="$@"
+  if grep -qE '^\|' <<< $1; then REGEX=${REGEX#?} ; fi
+  if grep -qE '\|$' <<< $1; then REGEX=${REGEX%?} ; fi
+  echo $REGEX
+}
+
+function etherGrep {
+  if [ -n "${1}" ]
+  then
+    ip link show "${1}" | grep -Po '(?<=ether\ )([a-f]|[0-9]|\:)+'
+  else
+    return
+  fi
+}
+
+function buildGuestMac {
+  if [ -z "$1" ]
+  then
+      # Generate a mac address for the guest if no host int or bridge to influence from
+    echo "52:54:00:$(openssl rand -hex 3 | sed 's/.\{2\}/&:/g;s/:$//')"
+  else
+    echo "52:54:00:$(cut -d':' -f4,5,6 <<<${1})"
+  fi
+}
+
+function genTap { # Think of a free tap name.
+  inc=0
+  # Look for a suitable numbered tap interface name.
+  until [ ! -L /sys/class/net/tap${inc} ] || [ $inc -ge 100 ]
+  do
+    ((inc++))
+  done
+  if [ $inc -ge 100 ]
+  then
+    return 1
+  else
+   echo "tap${inc}"
+  fi
+}
+
+function networking {
+  # A function for handling guest tap interfaces, bridge interfaces, host ethernet interfaces
+  # and tying them all together, pre-existing or not.
+ 
+  # Do not act if there are run issues.
+  [ -n "$expectLaunchIssue" ] && ! isDry && return 0
+
+  if [ "$1" == "start" ] && ! isDry
+  then
+    printer "\t\tDetermining network situation..."
+    # Determine how we will approach the network situation
+
+    # If we've been invoked without a tap interface name - generate a free one.
+    if [ -z "${tap}" ]
+    then
+      if tap=$(genTap)
+      then
+        tapAutoDiscovered=1
+        printer "${colors[blue]}\t\tUsing tap name ${tap} for VM"
+      else
+        printer "\t\tFailed to discover a free tap interface name to use." "fault"
+        return 1
+      fi
+
+    # Otherwise check if the user-provided tap exists already
+    else
+      if [ -L /sys/class/net/${tap} ]
+      then
+        printer "\t\tSpecified tap ${tap} already exists, will attempt to attach VM to that."
+        tapPreexists=1
+      else
+        printer "\t\tSpecified tap ${tap} does not exist, will create and attach VM to that."
+      fi
+    fi
+
+    # If the user hasn't specified a bridge or host interface,
+    # assume the VM's networking will be solely this tap interface
+    if [ -z "${bridge}${hostInt}" ]
+    then
+      printer "${colors[green]}\t\tNo bridge or host interface specified. The VM will be attached to tap ${tap} only."
+      printer "${colors[yellow]}\t\tThe ${tap} interface must be configured on the host for the VM to communicate with it."
+      tapOnly=1
+
+    # Otherwise if there's a host interface check it exists and is not already in use.
+    elif [ -n "${hostInt}" ]
+    then
+      if [ -d /sys/class/net/${hostInt} ]
+      then
+        intExists=1
+      else
+        printer "${colors[red]}\t\tinterface ${hostInt} specified but not found. Refusing to continue." "fault"
+        brStartFault=1
+        return 1
+      fi
+
+      if [ -L /sys/class/net/${hostInt}/master ] 
+      then
+        printer "${colors[red]}\t\tHost interface ${hostInt} already belongs to a bridge. Refusing to modify its existing configuration." "fault"
+        brStartFault=1 
+        return 1
+      fi
+
+    else # At this point the only other possibility is that a bridge interface has been specified.
+      printer "\t\tHost int not specified, will attach VM tap to existing bridge"
+    fi
+
+
+    
+
+    # If a bridge has been defined and exists we'll attach the tap interface to it.
+    if [ -n "${bridge}" ]
+    then
+      if [ -d "/sys/class/net/${bridge}" ]
+      then
+        printer "${colors[green]}\t\tBridge ${bridge} exists, will attach ${tap} to that."
+        bridgePreexists=1
+  
+        # If it doesn't exist but a hostInt has been set we will create the bridge and attach the tap and host interface to it.
+      elif [ -n "${hostInt}" ]
+      then
+        printer "${colors[green]}\t\tBridge ${bridge} doesn't exist but host interface ${int} has been specified."
+        printer "${colors[green]}\t\tWe'll create it and attach both ${tap} and ${hostInt} to it and run dhclient on it for the host's own networking."
+        bridgePreexists=0
+      else
+        printer "${colors[red]}\t\tbridge ${bridge} does not exist, but no host interface has been specified." "fault"
+        printer "${colors[red]}\t\tRefusing to create a bridge interface for no reason." "fault"
+        printer "${colors[red]}\t\tEither include a host interface with -hostint or drop the -bridge argument to use only a tap adapter." "fault"
+        printer "${colors[red]}\t\tOr drop all networking arguments to use user-mode NAT networking." "fault"
+        brStartFault=1 
+        return 1
+      fi
+    fi
+
+    # Create a MAC Address for the VM based of either the host int or bridge bridge for easy L2 identification.
+    # Otherwise generate one at random.
+    tapMAC="$(buildGuestMac $(etherGrep ${hostInt:-${bridge}}))"
+
+    # Start creating things
+
+    # Create our bridge if required and stop NetworkManager if it were running.
+    if [ -n "${bridge}" ] && [ ${bridgePreexists} -eq 0 ]
+    then
+
+      # Handle NM
+      if systemctl is-active NetworkManager >/dev/null
+      then
+        sudo systemctl stop NetworkManager
+        export nm="seen"
+      fi
+
+      # Create the bridge and bring it up
+      sudo ip link add ${bridge} type bridge
+      sudo ip link set ${bridge} up
+
+      if [ -n "${intExists}" ]
+      then
+        # Remove IPs from int and attach it to the bridge. Copy the MAC and bring it up.
+        sudo ip addr flush dev ${hostInt} && \
+          sudo ip link set dev ${hostInt} master ${bridge} && \
+          sudo ip link set dev ${bridge} address $(etherGrep ${hostInt}) && \
+          sudo ip link set ${hostInt} up
+      fi
+    fi
+
+    # Create the tap if required
+    if [ -z "${tapPreexists}" ]
+    then
+        sudo ip tuntap add ${tap} mode tap
+    fi
+
+    # Bring the tap device up if it isn't already.
+    if [[ "$(</sys/class/net/${tap}/operstate)" == "down" ]]
+    then
+        sudo ip link set ${tap} up
+    fi
+
+    # Bring the bridge device up if it isn't already.
+    if [ -n "${bridge}" ]
+    then
+      if [[ "$(</sys/class/net/${bridge}/operstate)" == "down" ]]
+      then
+        sudo ip link set ${bridge} up
+      fi
+    fi
+
+    # Take ownership of the tun special device for running qemu without root.
+    permissionsManager takeown /dev/net/tun
+
+    # Attach our new tap interface to the bridge 
+    if [ -n "${bridge}" ] # This check may not be required with the logic early in this function.
+    then
+      sudo ip link set ${tap} master ${bridge} && sudo ip link set ${tap} up
+      printer '\t\t------------------'
+      printer "\t\tBridge details:"
+      printer "\t\t\t${bridge}:"
+      for interface in $(ls -1 /sys/class/net/)
+      do
+        if [ -e "/sys/class/net/${interface}/master" ]
+        then
+          master=$(basename $(readlink /sys/class/net/${interface}/master))
+          if [ "$master" == "${bridge}" ]
+          then
+            printer "\t\t\t  ${interface}"
+          fi
+        fi
+      done
+
+      if [ ${bridgePreexists} -eq 0 ] && [ -n "${hostInt}" ]
+      then
+        printer "\t\tRunning dhclient on ${bridge}..."
+        sudo dhclient -v ${bridge} 2>&1|grep '^DHCPACK'
+      else
+        printer "${colors[green]}\t\tBridge already existed, not running dhclient -r on it."
+      fi
+    fi
+    echo '------------------'
+  elif [ "$1" == "stop" ] && ! isDry && [ -z "$brStartFault" ]
+  then
+    if [ -n "${bridge}" ] && [ ${bridgePreexists} -eq 0 ]
+    then
+      printer "${colors[yellow]}Undoing our bridge..."
+      dhclient -r ${bridge} >/dev/null 2>&1 && printer "${colors[green]}dhcp lease released and dhclient process ended..."
+      sudo ip link set ${bridge} down
+      sudo ip link del ${bridge}
+      if ! ip link show ${bridge} >/dev/null 2>&1
+      then
+        printer "${colors[green]}Bridge ${bridge} removed."
+      fi
+    fi
+
+    if [ -z "${tapPreexists}" ]
+    then
+      sudo ip link set ${tap} down
+      sudo ip link del ${tap}
+      printer "${colors[green]}Tap ${tap} removed."
+    fi
+
+    if [ "$nm" == "seen" ]
+    then
+      sudo systemctl restart NetworkManager
+      printer "${colors[green]}NetworkManager restarted."
+    fi
+  fi
+
+}
+
+function vtconBindings { # Toggles rendering to Ctrl+Alt+F[0-9]. Needs to be unhooked for GPU passthrough.
+  if ! isDry 
+  then
+    [ -n "$ignoreVtconn" ] && return 0
+    if [[ "$1" -eq 'bind' ]]; then bindBoolean="1"; bindState="$1" ; else bindBoolean="0" ; bindState="unbind" ; fi
+    echo efi-framebuffer.0 | sudo tee /sys/bus/platform/drivers/efi-framebuffer/$bindState >/dev/null
+    for vtconsole in /sys/class/vtconsole/*; do echo $bindBoolean | sudo tee $vtconsole/bind >/dev/null; done
+    vtconUnboundThisSession=1
+  fi
+}
+
+function enumerateUSBs { # Generate usb related arguments for the guest.
+  [ -n "$expectLaunchIssue" ] && ! isDry && return 0 # No action if issue present
+  echo "USB:"
+  lsusbOutput="$(lsusb)"
+  USBDevices="$(grep -E "$usbREGEX" <<<"$lsusbOutput")"
+
+  while read USBDevice
+  do
+     vendorProduct="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$USBDevice)"
+     vendor="$( cut -d':' -f1 <<<"$vendorProduct")"
+    product="$( cut -d':' -f2 <<<"$vendorProduct")"
+       Name="$(cut -d' ' -f7- <<<"$USBDevice")"
+    busPath="$(cut -d' ' -f2 <<<"$USBDevice")"
+ devicePath="$(cut -d' ' -f4 <<<"$USBDevice" | grep -Eo '[0-9]+')"
+    if [[ -n "$vendor" ]] && [[ -n "$product" ]]
+    then
+      newUsbArg="-device usb-host,vendorid=0x$vendor,productid=0x$product"
+        usbArgs+=" $newUsbArg"
+      printer "  Matched: ${colors[blue]}$vendor:$product '$Name'"
+      permissionsManager takeown /dev/bus/usb/${busPath}/${devicePath} # Take ownership, required for USB storage if not root.
+      printer "${colors[green]}    Added to USB Args as:\t$newUsbArg\n"
+    else
+      printer "${colors[red]}Skipping: '$USBDevice' as there was an issue finding it.\n"
+    fi
+  done <<<"$USBDevices"
+}
+
+function enumeratePCIs { # This makes arguments and also unbinds from drivers. Optional vfio-pci rebinding.
+  [ -n "$expectLaunchIssue" ] && ! isDry && ! [[ "$@" == *"restorebind"* ]] && return 0 # No action if issue present
+
+  function getPciCurrentDriver { lspci -nn -k -s "$1" | grep -oP '(?<=driver in use:\ ).*' ;}
+
+  function gpuLockHandler {
+    processesUsingGpu="$(sudo fuser /dev/dri/by-path/pci-${fullBuspath}* 2>/dev/null)"
+
+    if [ -n "$processesUsingGpu" ]
+    then
+      processNamesUsingGpu="$(ps $processesUsingGpu)"
+      if [[ "$processNamesUsingGpu" = *"Xorg"* ]] 
+      then
+        printer "${colors[yellow]}    It appears Xorg has latched onto this GPU, cannot unbind from driver and give to guest without killing Xorg." "fault"
+        if [ -z "$KILLX" ]
+        then
+          printer "${colors[yellow]}    Specify -killX to allow killing your graphical session for the guest to take a card." "fault"
+          printer "${colors[yellow]}    If you're on a dual GPU setup, consider configuring Xorg to ignore your second GPU. (See README.md)" "fault"
+          ((++expectLaunchIssue))
+          return 1
+        else
+          if systemctl is-active display-manager >/dev/null && ! isDry
+          then
+            printer "${colors[yellow]}    Stopping display-manager and unbinding console drivers..." "fault"
+            sudo systemctl stop display-manager ; export dm="seen"
+          else
+            printer "${colors[yellow]}    Could not find a service for display-manager. Confused but trying to continue anyway." "fault"
+          fi
+          vtconBindings unbind
+        fi
+      else
+        printer "${colors[yellow]}    Some processes are latched onto this card, but NOT Xorg. They must be killed to unbind this card." "fault"
+        printer "${colors[yellow]}    Xorg can be left alive and these processes relaunched:" "fault"
+        for pid in ${processesUsingGpu} # Keep track of what we killed to try and restore after stealing a GPU.
+        do
+          if grep "${pid}" <<< $(ps -u $USER)
+          then
+            killedCmdlines+=("$(tr -d '\0' </proc/${pid}/cmdline)") 2>/dev/null
+          fi
+        done
+        kill ${processesUsingGpu}
+      fi
+        printer "$processNamesUsingGpu" # Share the problematic process list with the user
+    else
+        printer "${colors[green]}    This GPU is free." "fault"
+    fi
+  }
+
+  function unbindWithTimeout { echo "$fullBuspath" | sudo timeout --signal 9 5 tee /sys/bus/pci/devices/$fullBuspath/driver/unbind >/dev/null 2>&1 ;}
+
+  function tryGracefulGpuUnbind {
+    printer "${colors[green]}    Unbinding GPU from:\t${colors[none]}${currentDriver}..."
+    gpuLockHandler || return $?
+    unbindWithTimeout
+
+    if [ $? -eq 137 ]
+    then
+      if [ -n "$KILLX" ]
+      then
+        printer "${colors[green]}    ${colors[red]}Failed... Trying again with X killed..."
+        gpuLockHandler killx
+        unbindWithTimeout
+        if [ $? -eq 137 ]; then errorBindingTimeout "Gpu unbind after killing X" ; return 1; fi
+      else
+        errorBindingTimeout "Gpu unbind without killing X"
+      fi
+
+    fi
+}
+
+  printer "PCI:"
+  declare -A -g deviceDrivers # Array for tracking devices and their driver.
+  if ! lsmod|grep -q vfio_pci
+  then
+    printer "${colors[yellow]}  vfio-pci isn't loaded. Loading it now."
+    result="$(sudo modprobe vfio-pci 2>&1)"
+    if [ "$?" -ne "0" ]
+    then
+      printer "$result" "fault"
+      ((++expectLaunchIssue))
+      printer "${colors[red]}  Could not modprobe vfio-pci. Please fix this." "fault"
+      if grep -qs 'Module vfio-pci not found in directory' <<< "$result"
+      then
+        printer "  ${colors[red]}This error is common after a kernel upgrade pre reboot. Either reboot into your new kernel or downgrade back to the above version to avoid rebooting." "fault"
+      fi
+      return 1
+    fi
+  fi
+
+  lspciOutput="$(lspci -nn)" ; PCIDevices="$(grep -E "$pciREGEX" <<<"$lspciOutput")"
+  if [ -z "$PCIDevices" ]; then echo "Couldn't find any PCI devices with regex '$pciREGEX', please try another one. Panicking."; exit 1; fi
+  inc=0
+  while read PCIDevice
+  do
+    shortBuspath="$(cut -d' ' -f1<<<$PCIDevice)"
+    fullBuspath="0000:$shortBuspath"
+    iommuGroup="$(basename $(readlink /sys/bus/pci/devices/$fullBuspath/iommu_group))"
+
+    printer "  Matched:\t${colors[blue]}$PCIDevice"
+    printer "  IOMMU Group:\t${colors[blue]}${iommuGroup}"
+
+    vendorClass="$( grep -Eo '(([0-9]|[a-f]){4}|:){3}' <<<$PCIDevice )"
+    vendor="$( cut -d':' -f1 <<<"$vendorClass")"
+     class="$( cut -d':' -f2 <<<"$vendorClass")"
+
+    currentDriver="$(getPciCurrentDriver "$fullBuspath")" # Always read the current driver for script usage.
+    if [ -n "${deviceDrivers["$vendorClass"]}" ]
+    then
+      originalDriver="${deviceDrivers["$vendorClass"]}"
+    fi
+
+    if ! [[ "$@" == *"restorebind"* ]] # Do our initial driver checks and changes unless we're here to restore an original driver right now.
+    then
+      if [ -n "$currentDriver" ]
+      then
+        deviceDrivers["$vendorClass"]="$currentDriver" # Add the PCI card's driver to the driver array for later.
+        originalDriver="${deviceDrivers["$vendorClass"]}"
+        if [ "$currentDriver" == "vfio-pci" ]
+        then
+          printer "    [INFO] ${colors[green]}Already bound to vfio-pci, leaving as is."
+        else
+          printer "    [INFO] ${colors[green]}Detected driver ${originalDriver}${colors[green]} is using this device. It will be re-bound on VM exit."
+        fi
+      else
+        printer "    [INFO] ${colors[green]}Has no driver, it will be bound to vfio-pci and will be left that way."
+      fi
+    fi
+
+    driver="${deviceDrivers["$vendorClass"]}"
+
+    if [[ "$@" == *"unbind"* ]] && isDry
+    then
+      printer "    [DRY]  ${colors[green]}Leaving device as is."
+    elif [[ "$@" == *"unbind"* ]] && ! isDry
+    then
+      if isGpu "$fullBuspath"
+      then
+        if [ -n "${currentDriver}" ] && [ ! "${currentDriver}" == "vfio-pci" ]
+        then
+          tryGracefulGpuUnbind || return $?
+        fi
+      else
+       unbindWithTimeout
+      fi
+    fi
+
+    if [[ "$@" == *"vfiobind"* ]] && ! isDry
+    then
+        if [ "$currentDriver" != "vfio-pci" ]
+        then
+          printer "${colors[green]}    Adding ID and binding to:\t${colors[none]}vfio-pci"
+          echo "0x$vendor 0x$class" | sudo timeout --signal 9 5 tee /sys/bus/pci/drivers/vfio-pci/new_id >/dev/null 2>&1
+          if [ $? -eq 137 ]; then errorBindingTimeout "bind via new_id" ; exit 1 ; fi
+          echo "$fullBuspath" | sudo timeout --signal 9 5 tee /sys/bus/pci/drivers/vfio-pci/bind >/dev/null 2>&1   # Try and bind the PCI address for this device just in case ID already added and not automatically bound
+          if [ $? -eq 137 ]; then errorBindingTimeout bind ; exit 1 ; fi
+        fi
+
+      while ! [ -c /dev/vfio/$iommuGroup ] # Wait a moment for the device to initialize under vfio-pci.
+      do
+        sleep 1 && ((++iommuTimeout))
+        if [ $iommuTimeout -gt 5 ]
+        then
+          printer "${colors[red]}    Timed out waiting for bound device to appear under /dev/vfio" "fault"
+          ((++expectLaunchIssue))
+          return 1
+        fi
+      done
+      permissionsManager takeown /dev/vfio/${iommuGroup}
+      echo 1 | sudo tee /sys/bus/pci/rescan >/dev/null
+
+    elif [[ "$@" == *"vfiobind"* ]] && isDry
+    then
+      :
+      echo
+    elif [[ "$@" == *"restorebind"* ]] && ! isDry
+    then
+      if [ "${currentDriver}" == "${originalDriver}" ]
+      then
+        : # Nothing to do here
+      elif [ -n "${originalDriver}" ] && [ "${originalDriver}" != "vfio-pci" ]
+      then
+        printer "${colors[green]}    Rebinding $vendorClass back to driver:\t${colors[none]}${originalDriver}"
+        echo "0x$vendor 0x$class" | sudo tee /sys/bus/pci/drivers/vfio-pci/remove_id >/dev/null 2>&1 # Removing the ID from vfio-pci is not strictly necessary.
+        echo "$fullBuspath" | sudo tee /sys/bus/pci/drivers/vfio-pci/unbind          >/dev/null 2>&1 # Above remove_id skips this step but run it "just in case" for certain setups.
+        echo "$fullBuspath" | sudo tee /sys/bus/pci/drivers/${originalDriver}/bind   >/dev/null 2>&1 # Try binding back to the real host driver to finish up.
+        if [ "$?" -eq "0" ]; then printer "${colors[green]}    Successfully rebound." ; else printer "${colors[red]}    Was unable to rebind it to ${originalDriver}." "fault"; fi
+      else
+        printer "${colors[green]}    Device $vendorClass had no driver so it has been left bound to vfio-pci."
+      fi
+    fi
+
+    if isGpu "${fullBuspath}" && [[ "$@" != *"restorebind"* ]] # Special condition for GPUs
+    then
+      guestGetsGPU=1
+      pciArgs+=" -device vfio-pci,x-vga=on,multifunction=on,host=$fullBuspath,id=hostdev$inc"
+      if [ -n "$romfilePath" ] && [ -f "$romfilePath" ]
+      then
+        printer "${colors[green]}    Romfile will be passed to the GPU on VM start.\t"
+        pciArgs+=",romfile=$romfilePath" #Tack romfile on the end if specified
+      fi
+    else
+      pciArgs+=" -device vfio-pci,host=$fullBuspath,id=hostdev$inc"
+    fi
+    ((++inc))
+  done <<<"$PCIDevices"
+
+  if [[ $var == *"vfiobind"* ]] ; then echo -ne "Here are the completed pciArgs:\n    $pciArgs"; fi
+}
+
+function setPidPrio {
+  # Sets a given pid argument to 'First-in First-out' scheduling policy and priority 20.
+  sudo chrt -f -p 20 $1 > /dev/null
+}
+
+function getQemuThreads {
+  if [ -z "$1" ]
+  then
+    printer "${FUNCNAME[0]} Needs a qemu pid as argument." >&2
+    printer "\tAlso accepts second argument as thread filter (e.g. 'CPU' or 'IO')" >&2
+    return 1
+  fi
+
+  for child in /proc/$1/task/*
+  do
+    threadName="$(cat $child/comm)"
+
+    if [ -n "$2" ] # Omit thread if match desired.
+    then
+      if ! [[ "$threadName" =~ "$2" ]]
+      then
+        continue
+      fi
+    fi
+
+    threadPid="$(basename $child)"
+    echo "$threadPid $threadName"
+
+  done
+
+}
+
+function pinVcpus {
+  if [ -d /proc/$1 ]
+  then
+      # First, this function will wait for all threads to be accounted for.
+      timeout=15 ; timer=0
+      while [ $(getQemuThreads $1 CPU | wc -l) -lt ${#vcpuArray[@]} ] && [ $timer -lt $timeout ]
+      do
+        ((++timer))
+        printer "${colors[yellow]}Waiting for vcpus to wake up... $(getQemuThreads $1 CPU | wc -l) found." >&2
+        sleep 1
+      done
+    if [ $timer -eq $timeout ] ; then printer "${colors[red]}Was unable to see all vCPU's appear under the qemu task in time. This can happen on large launches or slower systems." "fault" >&2 ; fi
+    printer "Successfully found ${#vcpuArray[@]} vCPUs on the guest." >&2
+
+    vcpuPosition=0
+    while read vcpuPid
+    do
+      printer "${colors[green]}Pinning vCPU $vcpuPosition to host core ${vcpuArray[$vcpuPosition]}" >&2
+      sudo taskset -cp ${vcpuArray[$vcpuPosition]} $vcpuPid >/dev/null # Pin this vcpu to a host thread.
+      setPidPrio $vcpuPid
+      #sudo chrt -f -p 20 $vcpuPid >/dev/null # Use FIFO scheduling on qemu vcpu threads.
+      ((++vcpuPosition))
+
+    done <<< "$(getQemuThreads $1 CPU | cut -d' ' -f1)"
+  fi
+}
+
+function checkFileExists {
+    # Check for valid Symlink or real file
+  if [ -e "$1" ]
+  then
+     return 0
+  else
+     printer "\t\t  ${colors[red]}:$1: Doesn't appear to exist?" "fault"
+     ((++expectLaunchIssue))
+     return 1
+  fi
+}
+
+function printCpuThreads {
+  unset processorArray
+  declare -A processorArray
+  eval $(awk '/^processor/ {thread=$NF;next} /^core/ { core=$NF ; printf "processorArray[" ; printf $NF ; printf "]+=" ; printf thread ; print "," }' /proc/cpuinfo)
+  
+  printer "${colors[green]}Host has ${#processorArray[@]} cores. Below is the cpu thread pairs per core. Useful to know as a -pinvcpus visual aid:"
+  coreIndex=0
+  for core in $(tr ' ' '\n' <<< "${!processorArray[@]}" | sort -h | tr '\n' ' ')
+  do
+    printer "core ${coreIndex}'s threads:" ; (((coreIndex++)))
+    printer "\t${colors[cyan]}${processorArray[$core]}${colors[none]}"
+  done
+  exit $?
+}
+
+function printIOMMU {
+  printer "${colors[green]}Ok, printing IOMMU Groups then exiting..."
+  iommuDir="/sys/kernel/iommu_groups"
+  if [ -d $iommuDir ]; then for g in `ls -1v $iommuDir`; do printer "IOMMU Group $g"; for d in $iommuDir/$g/devices/* ; do printer "${colors[cyan]}\t$(lspci -nns ${d##*/})"; done; done ; else printer ${colors[red]}"Couldn't find $iommuDir" "fault" ; fi
+  exit $?
+}
+
+function checkIOMMU {
+  if [ -z "$(find /sys/class/iommu/ -type l)" ]
+  then
+    printer "${colors[red]}IOMMU directory does not appear to be functional."
+    printer "\tFor an Intel machine you must add 'intel_iommu=on' to your kernel boot options in your bootloader." "fault"
+    printer "\tIf you're on an AMD machine instead add 'iommu=1'\n" "fault"
+    printer "\tYou should also add 'iommu=pt' as per the Archwiki to skip PCI devices which don't support passthrough" "fault"
+    printer "\tIf you've already done this and rebooted your host may require extra configuration or may not be compatible with IOMMU if not a bios option to change." "fault"
+    printer "\tFeel free to ask about this in case it's a script fault." "fault"
+    ((++expectLaunchIssue))
+  fi
+}
+
+function startVirtualTPM {
+  swtpmUUID=$(uuidgen)
+  if ! isDry
+  then
+    printer "${colors[blue]}\t\tStarting a virtual TPM for this guest"
+    mkdir -p /tmp/${swtpmUUID}
+    swtpm socket --tpmstate dir=/tmp/${swtpmUUID},mode=0600 \
+                 --ctrl type=unixio,path=/tmp/${swtpmUUID}.sock,mode=0600 \
+                 --log file=/tmp/${swtpmUUID}/tpm.log --terminate --tpm2 &
+    swtpmPid=$!
+  fi
+  TPMArgs="-chardev socket,id=chrtpm,path=/tmp/${swtpmUUID}.sock -tpmdev emulator,id=tpm0,chardev=chrtpm -device tpm-tis,tpmdev=tpm0"
+}
+
+function checkDependency {
+  for dependency in $@
+  do
+    which $dependency >/dev/null 2>&1 || missing="$missing $dependency "
+  done
+  if [[ -n "$missing" ]]
+  then
+    echo -ne "Couldn't find these programs:$missing\nPlease install the relevant packages or check your \$PATH."
+    exit 1
+  fi
+}
+
+function checkKvmHypervisorEligibility {
+  # Check for kvm module presence and host support. Try to self resolve any issues which pop up.
+  
+  function cpuSupportsVirtualization { grep -Eqs "vmx|svm|0xc0f" /proc/cpuinfo ; return $? ;}
+
+  function kernelModuleExists { modinfo $1 > /dev/null 2>&1 ; return $? ;}
+
+  function kvmVendorLoaded { # Boolean return on whether vendor kvm modules are loaded
+    lsmod|grep -qs '^kvm_' ; return $?
+  }
+
+  function checkDmesgKvm { # Try to throw a descriptive error if everything else has gone wrong.
+    sudo dmesg -t |grep 'kvm' | sort -u | while read dmesgLine
+    do
+      case "$dmesgLine" in
+        *"no hardware support for"*)
+          if [[ ${hostCpuCheck} == "unknown" ]]
+          then
+            printer "${colors[red]}Host CPU doesn't seem to be AMD or Intel and the 'kvm' module claims your CPU or Motherboard doesn't have hardware support for virtualization."
+          else
+            printer "${colors[red]}Host detected as ${hostCpuCheck} but the ${KvmVendorModule} kernel module doesn't believe there's hardware support."
+          fi
+            printer "${colors[red]}If this isn't expected for your hardware please check your bios for any virtualization-relevant flags to enable."
+            printer "${colors[red]}If the issue persists or the script has gotten something wrong feel free to make an issue on github to look into this."
+          return 1
+      ;;
+        *"disabled by bios"*)
+          printer "${colors[red]}Host CPU detected as ${hostCpuCheck} but the ${KvmVendorModule} kernel module believes you haven't enabled all relevant support features in your bios"
+          printer "${colors[red]}Visit your bios and enable the relevant ${hostVirtualizationBiosFlag} flags before trying again."
+          return 1
+      ;;
+      esac
+    done
+  }
+
+  function tryLoadKvmVendor { # Try to load the appropriate vendor module, unloading it first if present to potentially produce useful dmesg output.
+    case $(grep -m1 'model name' /proc/cpuinfo | tr '[:upper:]' '[:lower:]') in
+      *amd*)
+        hostCpuCheck=amd
+        KvmVendorModule=kvm_amd
+        hostVirtualizationBiosFlag="AMD-Vi (Sometimes labeled: 'SVM Mode / IOMMU Mode / IOMMU')"
+      ;;
+      *intel*)
+        hostCpuCheck=intel
+        KvmVendorModule=kvm_intel
+        hostVirtualizationBiosFlag="VT-d (Intel Virtualization Technology)"
+      ;;
+      *)
+        echo "Not sure what CPU vendor you're with. Will try reprobing the 'kvm' module."
+        hostCpuCheck=unknown
+        KvmVendorModule=kvm
+      ;;
+    esac
+      
+    if kernelModuleExists ${KvmVendorModule}
+    then
+      printer "Attempting modprobe of ${KvmVendorModule}..."
+      sudo modprobe ${KvmVendorModule}
+      if [ ! -e /dev/kvm ] # If still missing: check diagnostics and give up.
+      then
+        ((++expectLaunchIssue))
+        if checkDmesgKvm
+        then
+          printer "${colors[red]}Something else went wrong trying to get the kvm-relevant drivers active." 
+          printer "${colors[red]}Please check your dmesg output for more information on what specifically went wrong for kvm. (e.g. 'dmesg -t|grep kvm | sort -u')"
+          ((++expectLaunchIssue))
+          return 1
+        else
+          : #((++expectLaunchIssue)) # Bad 
+        fi
+      fi
+    else
+      printer "${colors[red]}The ${KvmVendorModule} module isn't present. This host can't use KVM without the relevant modules available."
+      ((++expectLaunchIssue))
+      return 1
+    fi
+  }
+
+    # Basic virtualization check
+  if ! cpuSupportsVirtualization
+  then
+    printer "${colors[red]}CPU doesn't claim to support virtualization at all [No feature flag for 'vmx', 'svm' or '0xc0f']."
+    printer "${colors[red]}This may be a result of bios settings or lack of hardware support."
+  fi
+
+    # Continued poking around for issues
+  if [ -e /dev/kvm ] && [ ! -c /dev/kvm ] # Theoretical invalid device file catch
+  then
+    printer "${colors[red]}Path /dev/kvm exists but is not in its expected character-device file type."
+    printer "${colors[red]}This must be manually resolved."
+    ((++expectLaunchIssue))
+  elif [ ! -e /dev/kvm ] # If kvm devicefile missing or loaded with troubled kvm_amd / kvm_intel module, try reloading.
+  then
+    printer "${colors[yellow]}kvm module doesn't appear to be active. Finding cause..."
+    tryLoadKvmVendor
+    [ -e /dev/kvm ] && printer "${colors[blue]}KVM ready."
+  fi 
+}
+
+function checkLibraryExists {
+  while [ $# -gt 0 ]
+  do
+    case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in 
+      -library)
+        library="$2"
+        shift
+      ;;  
+      -64)
+        archPath="lib64"
+        shift
+      ;;
+  esac
+  shift
+done
+
+  [ -z "$archPath" ] && archPath="lib"
+
+  # May slow things down on a well established system. Should add a common lookup table for common distro locations.
+  [ -n "$(find /usr/${archPath} -type f -name "${library}" 2>/dev/null)" ]
+  
+  return $?
+}
+
+#    _
+#   / \   _ __ __ _ ___
+#  / _ \ | '__/ _` / __|
+# / ___ \| | | (_| \__ \
+#/_/   \_\_|  \__, |___/
+#             |___/
+
+if [[ -z "$@" ]] ; then echo "No args seen. Printing help" ; printHelp ; fi
+
+
+while [ $# -gt 0 ]
+do
+  case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
+    -agents)
+      qemuAgent=1
+      Spice=1
+      addUsbController=1
+    ;;
+    -spice)
+      Spice=1
+      addUsbController=1
+    ;;
+    -qemuagent|-qemu-agent|-qemu)
+      qemuAgent=1
+    ;;
+    -append|-cmdline)
+      append="$2"
+      shift
+    ;;
+    -avoidvirtio|-novirtio)
+      avoidVirtio="1"
+    ;;
+    -bios)
+      biosPath="$2"
+      shift
+    ;;
+    -biosvars)
+      biosVars="$2"
+      shift
+    ;;
+    -bridge)
+      bridge="${2}"
+      networking=1
+      checkDependency dhclient openssl ip
+      if [[ ${bridge} =~ , ]]
+      then
+        printer "${colors[red]}-bridge has been split into -bridge -hostint and -tap."
+        printer "${colors[red]}Please use these new arguments for each desired component."
+        exit 1
+      fi
+      shift
+    ;;
+    -tap|-interface)
+      userSpecifiedTap=1
+      networking=1
+      tap="${2}"
+      shift
+    ;;
+    -hostint|-ethernet)
+      hostInt="${2}"
+      networking=1
+      shift
+    ;;
+    -colortest|-colourtest)
+      printer "${colors[green]}Ok, printing a color test then exiting..."
+      for i in $(sort <<< ${!colors[@]}) ; do printer "Test for: ${colors[$i]}$i " ; done
+      echo -ne ""
+      exit $?
+    ;;
+    -cputhreads|-showpairs|-showthreads|-showcpu)
+      checkDependency tr && printCpuThreads
+    ;;
+    -extras)
+      extras="$2"
+      shift
+    ;;
+    -force)
+      FORCE=1
+    ;;
+    -hostaudio)
+      hostAudio="1"
+    ;;
+    -huge|-hugepages)
+      HUGEPAGES="1"
+      if [ -d "$2" ]; then hugePath="$2" ; shift ; fi
+    ;;
+    -hyperv)
+      hyperv="1"
+    ;;
+    -ignorevtcon|-ignoreframebuffer|-leavefb|-leaveframebuffer|-leavevtcon)
+      ignoreVtconn=1
+    ;;
+    -image)
+      declare -A disks
+      disks[$2]='' # Declare disk
+      latestDisk="$2"
+      shift
+    ;;
+    -imageformat|-format)
+      if [ -n "$latestDisk" ]
+      then
+        disks[$latestDisk]="$2"
+        else
+        printer "${colors[red]}-imageformat only valid after using -image at least once." "fault"
+        ((++expectLaunchIssue))
+      fi # Add the format for the most recently declared disk
+      shift
+    ;;
+    -initrd|-rd|-init|-initramfs)
+      initrd=$2
+      shift
+    ;;
+    -iommugroups|-iommugrouping|-iommu)
+      checkIOMMU
+      printIOMMU
+    ;;
+    -iso)
+      isos=(${isos[@]} $2)
+      shift
+    ;;
+    -kernel|-k)
+      kernelPath=$2
+      shift
+    ;;
+    -killx)
+      KILLX=1
+    ;;
+    -looking-glass|-lookingglass|-lg)
+      lookingglass="1"
+      Spice=1
+    ;;
+    -memory|-mem|-m)
+      memoryArgs="$2"
+      shift
+    ;;
+    -nobios|-legacy|-legacyboot)
+      noBios=1
+    ;;
+    -nocolor|-nocolors|-nocolor|-nocolors)
+      unset colors # Pretty simple color killer.
+    ;;
+    -nonet)
+      noNet=1
+    ;;
+    -nvme)
+      nvme=1
+    ;;
+    -pci)
+      checkIOMMU
+      pciREGEX="$2"
+      shift
+    ;;
+    -pinvcpus)
+      if ! [[ "$2" =~ ^([0-9]|,)+$ ]]
+      then
+        echo "This script's -pinvcpus flag only accepts comma delimited threads at the moment such as: 0,1,2,3,4,5,6, or 0,2,4,8 -- Sorry!"
+        exit 1
+      fi
+      vcpuThreads="$2"
+      shift
+    ;;
+    -portforward)
+      protocol="$(cut -f1 -d':' <<<  $2)"
+      hostPort="$(cut -f2 -d':' <<<  $2)"
+      guestPort="$(cut -f3 -d':' <<< $2)"
+      portForwarding+=",hostfwd=${protocol}::${hostPort}-:${guestPort}"
+      shift
+    ;;
+    -quiet|-q|-silence|-s)
+      quiet=1 # The printer function looks for this
+    ;;
+    -romfile|-vbios)
+      romfilePath="$2"
+      shift
+    ;;
+    -run)
+      DRY="0"
+    ;;
+    -secureboot)
+      secureBoot=1
+    ;;
+    -tpm)
+      checkDependency swtpm
+      tpmMode=emulated
+    ;;
+    -usb)
+      usbREGEX="$2"
+      addUsbController=1
+      shift
+    ;;
+    -win11)
+      checkDependency swtpm
+      tpmMode=emulated
+      secureBoot=1
+      win11=1
+    ;;
+    --help|-help)
+      printHelp
+    ;;
+    *)
+      echo "Unknown argument $1"
+      printHelp
+    ;;
+    esac
+  shift
+done
+
+function getVmUUID {
+  # A unique string to identify this VM and some of its devices when building arguments
+  if [ -z "${vmUUID}" ]
+  then
+    vmUUID="$(tr -dc 'a-zA-Z' < /dev/urandom | head -c 6)"
+  fi
+  echo "${vmUUID}"
+}
+
+# ____                 _____ _ _       _     _
+#|  _ \ _ __ ___      |  ___| (_) __ _| |__ | |_
+#| |_) | '__/ _ \_____| |_  | | |/ _` | '_ \| __|
+#|  __/| | |  __/_____|  _| | | | (_| | | | | |_
+#|_|   |_|  \___|     |_|   |_|_|\__, |_| |_|\__|
+#                                |___/
+checkDependency qemu-system-x86_64 chrt taskset
+
+if isDry
+then
+  printer "${colors[magenta]}This is a DRY run. Please specify ${colors[red]}-run${colors[magenta]} to actually run"
+else
+    # Set a trap to run the cleanup function.
+  trap do_cleanup  EXIT HUP INT TERM
+fi
+
+if [ -n "$ignoreVtconn" ]
+then
+  printer "${colors[yellow]}-ignoreVtconn\tspecified, efi-framebuffer/vtcon bindings will be left as is."
+  printer "\t\t${colors[yellow]}AMD cards don't mind vtcons; this argument is to workaround a recent"
+  printer "\t\t${colors[yellow]}NULL pointer dereference bug in fbcon.c) on NVIDIA-powered hosts"
+  printer "\t\t${colors[yellow]}Follow the bug report here: https://bugzilla.kernel.org/show_bug.cgi?id=216475"
+fi
+
+declare -A deviceTypes
+deviceTypes[net]='virtio-net'
+deviceTypes[scsiController]='virtio-blk-pci'
+deviceTypes[vga]='virtio'
+deviceTypes[serial]='virtio-serial'
+deviceTypes[display]='sdl'
+
+
+if [ -n "$win11" ]
+then
+  printer "${colors[green]}-win11\tspecified, automatically enabled -secureboot and -tpm."
+fi
+
+if [ -n "$secureBoot" ]
+then
+  printer "${colors[green]}-secureboot\tspecified, VM will use a secureboot OVMF if available."
+  if [ -z "$biosVars" ]
+  then
+    printer "${colors[red]}\t\tNo -biosvars file provided. Please copy your system default OVMF_VARS.fd for this VM to use and specify it with the -biosvars argument."
+    ((++expectLaunchIssue))
+  fi
+
+
+fi
+
+if [ -n "$avoidVirtio" ]
+then
+printer "${colors[green]}-avoidVirtio\tspecified, will try to avoid virtio-powered devices for guest compatibility."
+printer "${colors[yellow]}\t\tVM won't perform as well without threaded virtio components. Consider installing the drivers in your guest."
+deviceTypes[net]='e1000e'
+deviceTypes[scsiController]='ide-hd'
+deviceTypes[vga]='std'
+deviceTypes[serial]='pci-serial'
+fi
+
+if [ -n "$nvme" ]
+then
+  deviceTypes[scsiController]='nvme'
+fi
+
+if [ -n "$tpmMode" ]
+then
+  printer "${colors[green]}-tpm\t\tspecified. Will give the guest a virtual TPM"
+  startVirtualTPM
+fi
+
+  # Determine host total cpu threads.
+hostTotalThreads=$(grep -E 'processor' /proc/cpuinfo |wc -l)
+
+  # Roll for hyperthreading to determine core count.
+if hostIsHyperthreaded
+then
+  hostCores=$(((${hostTotalThreads}/2)))
+  hyperthreaded="hyperthreaded"
+else
+  hostCores=${hostTotalThreads}
+fi
+
+if [ -n "$vcpuThreads" ] # If no vcpu pinning specified fallback to half the host CPU unpinned.
+then
+  printer "${colors[green]}-pinvcpus\tspecified, Guest will run on host CPU threads:${colors[none]}\t$vcpuThreads"
+  # Make an array for later reference
+  OLDIFS="$IFS" ; IFS=', ' vcpuArray=($(echo $vcpuThreads)) ; IFS="$OLDIFS"
+  vcpuCount=$(wc -w <<<${vcpuArray[*]})
+    # Check if specified -pinvcpus thread count is divisible by 2. Use hyperthreading/smt if supported
+
+  if (( $vcpuCount % 2 == 0 )) && hostIsHyperthreaded
+  then
+    guestCores=$(( vcpuCount / 2 ))
+    guestThreads=2
+  else
+    guestCores=$vcpuCount
+    guestThreads=1
+  fi
+
+  vcpuPinningAfterQemuStart=1
+else
+  guestCores=$(((${hostCores} / 2)))
+  guestTotalThreadCount=$(((${hostTotalThreads} / 2)))
+  if hostIsHyperthreaded; then guestThreads=2; else guestThreads=1; fi # For qemu's smt,threads= argument
+  printer "${colors[yellow]}-pinvcpus\tnot specified, Guest will get half host's core total as vcpus (No pinning):\t${colors[none]} ${guestCores} $(hostIsHyperthreaded && printer "hyperthreaded")vcpu's (${hostCores}/2) $(hostIsHyperthreaded && printer "for a total of ${guestTotalThreadCount} vcpu threads (${hostTotalThreads}/2).")"
+fi
+
+  # Determine guest memory
+if [ -z "$memoryArgs" ]
+then
+  totalHostMemoryKB="$(readMeminfo MemTotal)"
+  if [ -n "$totalHostMemoryKB" ]
+  then
+    guestmemoryMB="$((totalHostMemoryKB / 1024 / 2))"
+    printer "${colors[yellow]}-memory\t\tnot specified, will use half host total:\t${colors[none]}${guestmemoryMB} MB"
+  else
+    echo "${colors[red]}Failed to find a default memory value for the guest."
+  fi
+else
+  if [[ "$memoryArgs" =~ [gG]$ ]] # Convert to MB
+  then
+    memoryArgs="$(($(grep -Eo '[0-9]+' <<< $memoryArgs) * 1024 ))"
+  fi
+  guestmemoryMB=$memoryArgs
+  printer "${colors[green]}-memory\t\tspecified, guest will receive:\t\t\t${colors[none]}${guestmemoryMB} MB"
+fi
+
+  # Eval biosPath
+if [[ -z "$biosPath" ]]
+then
+  defaultBiosPath="/usr/share/edk2/x64/OVMF_CODE.4m.fd"
+  defaultSecbootBiosPath="/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd"
+  [ -n "$secureBoot" ] && defaultBiosPath="$defaultSecbootBiosPath"
+  if [[ ! -f "$defaultBiosPath" ]]
+  then
+    printer "${colors[red]}-bios\t\tnot specified and couldn't find default '$defaultBiosPath'.\n\t\tPlease install OVMF or set your .fd file with the -bios argument"
+    ((++expectLaunchIssue))
+  else
+    printer "${colors[green]}-bios\t\tnot specified, using discovered default:\t${colors[none]}${defaultBiosPath}"
+    biosPath=$defaultBiosPath
+  fi
+else
+  if [ ! -f "$biosPath" ] ; then printer "${colors[red]}-bios\t\tdoesn't appear to exist: ${colors[none]}\t${biosPath}" ; ((++expectLaunchIssue)) ; fi
+fi
+
+if [ -n "$noBios" ]
+then
+    printer "${colors[green]}-nobios\t\tspecified. Booting standard non-UEFI."
+elif [ -n "$biosVars" ]
+then
+  if [ ! -f "$biosVars" ]
+  then
+    printer "${colors[red]}-biosvars\tvar file doesn't seem to exist:\t\t${colors[none]}\t${biosVars}"
+    ((++expectLaunchIssue))
+  else
+    permissionsManager takeown $biosVars
+    printer "${colors[green]}-biosvars\tspecified, using for this VM:\t\t\t${colors[none]}${biosVars}"
+  fi
+fi
+
+  # Eval kernel/initrd/append args if included
+if [ -n "$kernelPath" ]
+then
+  if [ ! -f "$kernelPath" ]
+  then
+    printer "${colors[red]}-kernel\t\tFile not found: $kernelPath"
+    ((++expectLaunchIssue))
+  else
+    printer "${colors[green]}-kernel\t\t specified, using provided image:\n\t\t\t${colors[none]}$(file -bz "$kernelPath"| sed 's/, /\n\t\t\t/g')"
+    kernelArgs+=" -kernel $kernelPath"
+  fi
+fi
+
+if [ -n "$initrd" ]
+then
+  if [ ! -f "$initrd" ]
+  then
+    printer "${colors[red]}-kernel\t\tFile not found: $initrd"
+    ((++expectLaunchIssue))
+  else
+    printer "${colors[green]}-initrd\t\t specified, using provided image:\n\t\t\t${colors[none]}$(file -bz "$initrd"|sed 's/, /\n\t\t\t/g')"
+    kernelArgs+=" -initrd $initrd"
+  fi
+fi
+
+if [ -n "$append" ]
+then
+  printer "${colors[green]}-append\t\t seen, including extra kernel arguments this run."
+    kernelArgs+=" -append $( sed 's/ /\\ /g'<<< $append)"
+  echo "total kernel args: $kernelArgs"
+fi
+
+  # Eval Hugepages
+if [ -n "$HUGEPAGES" ]
+then
+  if [ -z "$hugePath" ]
+  then
+    hugePath="/dev/hugepages" ; hugePathDefault=1
+    printer "${colors[yellow]}-hugepages\tspecified for this run but no mountpoint argument specified."
+    printer "${colors[yellow]}\t\tAttempting to use kernel default ${colors[none]}${hugePath}."
+  else
+    printer "${colors[green]}-hugepages\tspecified with custom mountpoint." ; hugePathDefault=0
+  fi
+
+   # Set the argument regardless of dry setting.
+  hugeArgs="-mem-path $hugePath"
+
+  if ! grep "hugetlbfs ${hugePath}" /proc/mounts >/dev/null 2>&1 # Check for a hugetlbfs mount for this path
+  then
+    printer "${colors[red]}\t\tMountpoint ${colors[none]}${hugePath}${colors[red]} not found in ${colors[none]}/proc/mounts${colors[red]} as type hugetlbfs?"
+
+    if [ "$hugePathDefault" -eq 1 ]
+    then
+      printer "\t\t${colors[red]}Should typically be mounted by default in Linux. Please try to mount $hugePath"
+      printer "\t\t${colors[red]}manually or if you've configured a custom mountpoint please specify it."
+    else
+      printer "${colors[red]}\t\tIf you don't have a custom hugepage mount such as for"
+      printer "${colors[red]}\t\t1GB hugepage preallocation at boot then just use ${colors[none]}-hugepages${colors[red]}"
+      printer "${colors[red]}\t\twithout an argument to use the default system hugepages."
+    fi
+    printer "${colors[red]}\t\tPanicking."
+    ((++expectLaunchIssue))
+    exit 1
+  fi
+
+  hugepageSize="$(grep $hugePath /proc/mounts | grep -Po '(?<=pagesize=).+[A-Z]' | tail -n1)"
+  if [[ "$hugepageSize" =~ 'M' ]]
+  then
+    hugepageSizeMB="$(grep -Eo '[0-9]+' <<< $hugepageSize)"
+  elif [[ "$hugepageSize" =~ 'G' ]]
+  then
+    hugepageSizeMB="(($(grep -Eo '[0-9]+' <<< $hugepageSize) * 1024))"
+  else
+    printer "${colors[red]}\t\tUnable to determine ${hugePath}'s hugepage size via the mountpoint. Panicking." "fault"; ((++expectLaunchIssue))
+  fi
+  hugepageSizeKB="$((hugepageSizeMB * 1024))"
+  printer "${colors[green]}\t\tThe selected hugepage mount's size per page is ${hugepageSizeMB}M"
+
+  pagesRequired="$((guestmemoryMB / hugepageSizeMB))"
+  printer "${colors[green]}\t\t${pagesRequired} pages will be deployed for ${guestmemoryMB}MB of VM memory."
+
+  if ! isDry
+  then
+    permissionsManager takeown $hugePath
+    if [ $(readHugeInfo ${hugepageSizeKB} free_hugepages) -ge $pagesRequired ]
+    then
+      printer "\t\t${colors[green]}Hugepages already preallocated with enough free for guest, using those."
+    else
+      echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null && printer "\t\tMemory cache dropped for hugepages..."
+      if printf "6.3.1\n$(uname -r |grep -oPm1 '^([0-9]+|\.){5}')" | sort -V -C && [ -d /sys/module/zfs ]
+      then
+        echo -e "\t\t${colors[yellow]}Skipping compact_memory to avoid crash on kernel >=6.3.1 with ZFS."
+        echo -e "\t\t${colors[yellow]}See bug: https://github.com/openzfs/zfs/issues/15140"
+      else
+        echo -ne "\t\tRunning compact_memory... " ; echo 1 | sudo tee /proc/sys/vm/compact_memory >/dev/null && printer "${colors[green]}OK."
+      fi
+      echo "$pagesRequired" | writeHugeInfo ${hugepageSizeKB} nr_hugepages ; hugepagesSelfAllocated=1
+      printer "\t\tGiving hugepages a moment to allocate."
+      while [ $(readHugeInfo ${hugepageSizeKB} nr_hugepages) -lt $pagesRequired ]
+      do
+        echo -ne '.'
+        ((++count)) ; if [ $count -gt 30 ]; then break; fi
+        sleep 1
+      done ; echo '' # Newline
+      hugepagesFree="$(readHugeInfo ${hugepageSizeKB} free_hugepages)"
+      if [[ "$(readHugeInfo ${hugepageSizeKB} free_hugepages)" -lt "$pagesRequired" ]]
+      then
+        printer "${colors[red]}Error, couldn't allocate all required pages. Please free up memory or check your system."
+        printer "\t${colors[yellow]}(${colors[none]}${hugepagesFree} ${colors[yellow]}pages free out of ${pagesRequired}${colors[yellow]} requested. With that the highest value achieved right now is: -mem $((hugepagesFree * hugepageSizeMB))${colors[yellow]})\n"
+        ((++expectLaunchIssue))
+      fi
+      printer "\n\n${colors[green]}Hugepages ready."
+    fi
+  fi
+fi
+
+  # Put core QEMU arguments together
+
+machineArgs="-machine q35,accel=kvm,kernel_irqchip=on" # kernel_irqchip helps prevent PCI Error Code 34 on GPUs.
+cpuArgs="-cpu host,kvm=on,topoext=on"
+
+if [ -n "$hyperv" ]
+then
+  printer "${colors[green]}-hyperv\t\tspecified, HyperV Enlightenments will be enabled for this run."
+  cpuArgs+=",hv-frequencies,hv-relaxed,hv-reset,hv-runtime,hv-spinlocks=0x1fff,hv-stimer,hv-synic,hv-time,hv-vapic,hv-vpindex"
+fi
+
+smpArgs="-smp sockets=1,cores=$guestCores,threads=$guestThreads"
+coreArgs="$machineArgs -enable-kvm -m $guestmemoryMB $cpuArgs $smpArgs"
+coreArgs+=" -name $(basename $0),debug-threads=on"
+[ -z "$noBios" ]   && coreArgs+=" -drive if=pflash,format=raw,unit=0,readonly=on,file=$biosPath"
+[ -n "$biosVars" ] && coreArgs+=" -drive if=pflash,format=raw,unit=1,file=$biosVars"
+coreArgs+=" -serial mon:stdio" # Add a qemu serial device
+coreArgs+=" -nodefaults"       # Don't use any default devices
+
+if [ -n "$hostAudio" ]
+then
+  printer "${colors[green]}-hostaudio\tspecified, VM will use a host audio backend this run."
+
+  audioSystems=(pipewire pulseaudio)
+  audioSystem="$(which ${audioSystems[@]} 2>/dev/null)"
+  if [ -z "${audioSystem}" ] 
+  then 
+    printer "${colors[red]}\t\tUnable to find an audio server supported by this script. (${audioSystems[@]})"
+    ((++expectLaunchIssue))
+  else
+
+    audioSystemName="$(basename ${audioSystem})"
+    declare -A soundDrivers
+
+    soundDrivers[pipewireAudiodev]=pipewire
+    soundDrivers[pipewireLib]=audio-pipewire.so
+    soundDrivers[pipewireFallback]=pulseaudio
+
+    soundDrivers[pulseaudioAudiodev]=pa
+    soundDrivers[pulseaudioLib]=audio-pa.so
+
+    soundDriver=${soundDrivers[${audioSystemName}Audiodev]}
+    soundDriverFile=${soundDrivers[${audioSystemName}Lib]}
+    soundDriverFallback=${soundDrivers[${audioSystemName}Fallback]}
+
+
+    if checkLibraryExists -library ${soundDriverFile}
+    then
+      qemuAudioDevCheck=1
+    else
+      if [ -n "${soundDriverFallback}" ]
+      then # Try pa fallback
+            soundDriverFallbackAudiodev=${soundDrivers[${soundDriverFallback}Audiodev]}
+        soundDriverFallbackFileLib=${soundDrivers[${soundDriverFallback}Lib]}
+        if which pipewire-pulse >/dev/null 2>&1 && checkLibraryExists -library ${soundDriverFallbackFileLib}
+        then
+          printer "${colors[green]}\t\tFalling back to ${soundDriverFallback} as the system has the qemu library software present."
+          soundDriver="${soundDriverFallbackAudiodev}"
+          soundDriverFile="${soundDriverFallbackFileLib}"
+          audioSystemDeps+=(pipewire-pulse)
+          qemuAudioDevCheck=1
+        fi
+      fi
+    fi
+
+    if [ -z "${qemuAudioDevCheck}" ]
+    then
+      printer "${colors[red]}\t\t${soundDriverFile} missing from system."
+      printer "${colors[red]}\t\taudiodev may not work without installing your distro's relevant package for this library."
+      ((++expectLaunchIssue))
+    fi
+
+  if ! isDry # Start an audio sever
+  then
+    if ps -au ${USER} | grep -Eoqs " (${audioSystemName})$"
+    then
+      printer "${colors[green]}\t\t${audioSystemName} aleady running on host"
+      hostSoundReady=1
+    else
+      systemctl start --user ${audioSystemName} ${audioSystemDeps}
+
+      case $? in
+        0)
+          printer "${colors[green]}\t\tStarted ${audioSystemName}."
+          hostSoundReady=1
+        ;;
+        1)
+          printer "${colors[green]}\t\tFailed to start ${audioSystemName}."
+          ((++expectLaunchIssue))
+        ;;
+        *)
+          printer "${colors[red]}\tSomething else went wrong trying to start ${audioSystemName}."
+          ((++expectLaunchIssue))
+      esac
+    fi
+  fi
+
+fi
+
+  soundArgs="-audiodev ${soundDriver},id=snd0"
+  soundArgs+=" -device ich9-intel-hda -device hda-output,audiodev=snd0"
+  coreArgs+=" $soundArgs"
+fi
+
+if [[ -n "${!disks[@]}" ]]
+then
+  printer "${colors[green]}-image(s)\tspecified, using virtual disk(s) this run:"
+  printer "\t\t${colors[blue]}Driver: ${colors[none]}${deviceTypes[scsiController]}"
+else
+  printer "${colors[yellow]}-image\t\tnot specified, This VM will run without any virtual disks."
+fi
+
+# Enumerate disks
+for disk in ${!disks[@]}
+do
+  ((++ioCounter))
+  if [ -n "${disks[$disk]}" ]
+  then
+    diskFormat=",format=${disks[$disk]}"
+  else
+    unset diskFormat
+  fi
+
+  printer "\t\t${ioCounter}"
+  printer "\t\t${colors[blue]}  Path:\t\t${colors[none]}${disk}"
+  printer "\t\t${colors[blue]}  Format:\t${colors[none]}${disks[$disk]}"
+  checkFileExists "$disk"
+  permissionsManager takeown ${disk}
+  coreArgs+=" -drive file=$disk,if=none,discard=on,id=drive${ioCounter}${diskFormat}"
+  coreArgs+=" -device ${deviceTypes[scsiController]},drive=drive${ioCounter},id=disk${ioCounter}"
+
+  # Skip iothreads for both the virtual SATA controller and NVMe controller which lack support. (No flag)
+  if [ -z "$avoidVirtio" ] && [ -z "$nvme" ]
+  then
+    coreArgs+=",iothread=iothread${ioCounter}" # Intentionally attached as extra for the previous device
+    coreArgs+=" -object iothread,id=iothread${ioCounter}"
+
+  elif [ -n "$nvme" ] # If NVMe set a serial or use the real disk's serial if available.
+  then
+    unset serial
+    if [ -b "${disk}" ]
+    then
+      nvmeDiskPath="$(realpath ${disk})"
+
+      # Strip any partitions if nesting.
+      nvmeDiskPathNoPart="$(awk '/\/dev\/.*p[0-9]+/ {sub("p[0-9]+$","")} /\/dev\/sd[a-z]+[0-9]+/ {sub("[0-9]+$","")} END {print $0}' <<< "${nvmeDiskPath}")"
+      nvmeDiskName="$(basename ${nvmeDiskPathNoPart})"
+
+      # If serial exists and can be read
+      if [ -f "/sys/block/${nvmeDiskName}/device/serial" ] && [ -r "/sys/block/${nvmeDiskName}/device/serial" ]
+      then
+        serial="$(</sys/block/${nvmeDiskName}/device/serial)"
+        nvmeDiskNotes="(Physical serial of device)"
+      else
+        serial="${nvmeDiskName}"
+        nvmeDiskNotes="(Fallback. Unable to read serial)"
+      fi
+    fi
+
+    # Drop any whitespace from serial read.
+    [[ "${serial}" =~ ' ' ]] && serial="${serial// /}"
+
+    # Set a default serial if we failed to discover one.
+    [ -z "${serial}" ] && serial="disk${ioCounter}"
+
+    coreArgs+=",serial=${serial}"
+    printer "\t\t${colors[blue]}  Serial:\t${colors[none]}${serial} ${nvmeDiskNotes}"
+  fi
+done
+
+if [ -n "$isos" ]
+then
+  printer "${colors[green]}-iso(s)\tattached:"
+  for iso in ${isos[@]}
+  do
+    ((++ioCounter))
+    printer "\t\t${ioCounter}\t${colors[blue]}\n\t\t  Path:\t\t${colors[none]}${iso}"
+    checkFileExists "$iso"
+    coreArgs+=" -drive file=${iso},index=${ioCounter},media=cdrom"
+  done
+fi
+
+
+if [ -n "$romfilePath" ]
+then
+  printer "${colors[green]}-romfile\tspecified, if a GPU is detected in the -pci arguments this romfile will be used."
+  printer "\t\t$romfilePath"
+  if [ ! -f "$romfilePath" ] ;then printer "${colors[red]}\t\tBut the romfile doesn't appear to exist? Panicking" ; ((++expectLaunchIssue)) ; fi
+  printer "\t\t${colors[yellow]}Please confirm your romfile is safe with a project such as rom-parser before using this feature"
+  sleep 3
+fi
+
+if [ -n "$lookingglass" ] || [ -n "${Spice}" ]
+then
+  # Set some info
+  spiceName=spice
+  spiceSocket="/tmp/$(getVmUUID).${spiceName}.socket"
+  remoteViewerCommand="remote-viewer spice+unix://${spiceSocket}"
+fi
+
+if [ -n "$lookingglass" ]
+then
+  printer "${colors[green]}-looking-glass\tspecified. Will enable and launch with that."
+  #looking_glass_client_command="looking-glass-client -c ${spiceSocket} -p 0 spice:clipboard=yes spice:clipboardToVM=yes spice:clipboardToLocal=yes spice:audio=yes"
+  looking_glass_client_command="looking-glass-client -c ${spiceSocket} -p 0"
+  printer "${colors[green]}\t\t\tFor manual launching: ${colors[blue]}${looking_glass_client_command}"
+
+  lgArgs+=" -object memory-backend-file,id=lgMemory0,share=on,mem-path=/dev/shm/looking-glass,size=64M" # Memory currently hardcoded to 64M, can be changed in this script if needed. Plan to take resolution as an argument in future.
+  lgArgs+=" -device ivshmem-plain,id=shmem0,memdev=lgMemory0,id=lookingglass"
+  Spice=1
+fi
+
+if [ -n "${qemuAgent}" ]
+then
+  printer "${colors[green]}-qemu-agent\tspecified. QEMU Guest Agent socket will be added."
+  qgaSocket="/tmp/$(getVmUUID).qga.socket"
+  agentArgs+=" -chardev socket,path=${qgaSocket},server=on,wait=off,id=qga0"
+  agentArgs+=" -device virtio-serial-pci"
+  agentArgs+=" -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"
+fi
+
+# Also called by lookingGlass if used
+if [ -n "${Spice}" ]
+then
+
+  # spice-app makes qemu set up its own spice parameters. We want to spawn our own remote-viewer process.
+  deviceTypes[display]='none'
+
+  # qxl seems to support automatic guest display resizing with the least issues.
+  deviceTypes[vga]='qxl'
+
+  # If looking glass is to be used, assume we don't want a virtual video card or display and that PCIe passthrough of a video device will be done.
+  # Should just call isGpu early to check and support both use-cases.
+  if [ -n "$lookingglass" ]
+  then
+    deviceTypes[vga]='none' # No virtual video card when looking glass is to be used.
+  fi
+
+  printer "${colors[green]}-spice\t\tspecified. Will add components for Spice."
+  printer "${colors[green]}\t\tEnables clipboard sharing, automatic resolution resizing and -vga qxl for supporting this."
+  printer "${colors[blue]}\t\t\tIf you close spice you can reconnect to this VM's socket with:"
+  printer "${colors[blue]}\t\t\t${remoteViewerCommand}"
+  printer "${colors[blue]}\t\t\tOr kill the guest with Ctrl-A then X in this terminal. (Unsafe shutdown)"
+  printer "${colors[blue]}\t\t\tOr Ctrl-A then C in this terminal and running the system_powerdown command (If supported)."
+
+  ## Spice backend
+
+  # Add a serial device for this to take place on
+  #agentArgs+=" -device ${deviceTypes[serial]}"
+  agentArgs+=" -device virtio-serial-pci"
+
+  # Listener
+  #agentArgs+=" -spice port=${spicePort},addr=127.0.0.1,disable-ticketing=on,image-compression=off,seamless-migration=on"
+  #agentArgs+=" -spice unix=on,addr=${spiceSocket},disable-ticketing=on,image-compression=off,seamless-migration=on"
+  agentArgs+=" -spice unix=on,addr=${spiceSocket},disable-ticketing=on,image-compression=off,seamless-migration=on"
+
+  # vdagent spicevmc channel
+  agentArgs+=" -chardev spicevmc,id=vdagent,name=vdagent"
+
+  # For lookingglass, headless spice
+  #agentArgs+=" -chardev socket,path=${spiceSocket},server=on,wait=off,id=vmsocket"
+  #agentArgs+=" -device virtserialport,nr=1,chardev=spicechannel0,id=channel0,name=com.redhat.spice.0"
+  agentArgs+=" -device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
+
+  # Support up to 4 passed through usb devices out of the box.
+  # For anything more than casual testing or a quick usb flash drive this is a bad idea.
+  # Consider PCIe passthrough for serious device passthroguh where possible.
+  for i in {1..4}
+  do
+    agentArgs+=" -chardev spicevmc,name=usbredir,id=usbredirchardev${i} -device usb-redir,chardev=usbredirchardev${i},id=usbredirdev${i}"
+  done
+
+
+
+
+fi
+
+if [ -n "$extras" ]
+then
+  printer "${colors[green]}-extras\t\tspecified, we'll start qemu with these extra arguments:${colors[none]}\t$extras"
+  echo '' # spacer
+fi
+
+# Prepare any advanced guest networking requested
+ isDry && networkingFlagString='Acknowledged [DRY]' ||  networkingFlagString=specified
+[ -n "${bridge}" ]           && printer "${colors[green]}-bridge\t\t${networkingFlagString}\t(${bridge})"
+[ -n "${userSpecifiedTap}" ] && printer "${colors[green]}-tap\t\t${networkingFlagString}\t(${tap})"
+[ -n "${hostInt}" ]          && printer "${colors[green]}-hostInt\t\t${networkingFlagString}\t(${hostInt})"
+
+if [ -n "${networking}" ] && ! isDry
+then
+  if networking start
+  then
+    networkArgs="-netdev tap,id=vmnet,ifname=${tap},script=no,downscript=no" # Bridge
+  else
+    ((++expectLaunchIssue))
+  fi
+elif [ -n "$noNet" ]
+then
+  networkArgs="-nic none"
+  printer "${colors[green]}-nonet\t\tspecified, there will be no virtual network for the VM this run."
+else
+  networkArgs+=" -netdev user,id=vmnet${portForwarding}" # NAT
+  printer "${colors[yellow]}-bridge/-nonet\tnot specified, VM will be given a NAT adapter\n\t\twith a random mac suffix (guest to host) this run.\n\t\tOK for most applications."
+fi
+
+if [ -z "$noNet" ]
+then
+    # Generate a mac for the guest if not bridging.
+  if [ -z "${tapMAC}" ]; then tapMAC="$(buildGuestMac)" ; fi
+
+    # Add Network card for for nat/bridging
+  networkArgs+=" -device ${deviceTypes[net]},netdev=vmnet,mac=${tapMAC}"
+fi
+
+
+  # Remove any leading/trailing pipes from the regex just in case.
+  #
+if [ -n "$usbREGEX" ];         then usbREGEX=$(regexCleanup "$usbREGEX"); fi
+if [ -n "$pciREGEX" ];         then pciREGEX=$(regexCleanup "$pciREGEX"); fi
+
+if [ -n "$addUsbController" ]; then usbArgs="-device qemu-xhci"         ; fi # Add a USB3 controller.
+if [ -n "$usbREGEX" ];         then enumerateUSBs                       ; fi
+if [ -n "$pciREGEX" ];         then enumeratePCIs unbind vfiobind       ; fi
+
+if [ -n "${killedCmdlines}" ]
+then
+  printer "${colors[blue]}Restoring desktop processes killed to unbind the card:"
+
+  for process in ${!killedCmdlines[@]}
+  do
+    eval "${killedCmdlines[${process}]} >/dev/null 2>&1 &"
+  done
+
+fi
+
+
+  # Must do this after enumerating a PCI regex as it checks for GPUs first.
+  # Create a display spicey display only if
+  # 1. The guest gets no PCI GPU
+  # 2. $DISPLAY is set.
+
+if [ -z "$guestGetsGPU" ] && [[ -n "$DISPLAY" ]]
+then
+  printer  "${colors[green]}Guest has no GPU but \$DISPLAY variable is set [$DISPLAY]. Giving it a virtual screen for this run."
+  coreArgs+=" -display ${deviceTypes[display]} -vga ${deviceTypes[vga]}" # Create X11 window if no passthrough used. Also if $DISPLAY isn't set.
+elif [ -n "$guestGetsGPU" ]
+then
+  printer  "${colors[green]}Guest will get a PCI gpu, no virtual monitor will be attached."
+  coreArgs+=" -nographic -vga none"
+elif [ -z "$DISPLAY" ]
+then
+  printer  "${colors[green]}DISPLAY variable unset, guest will have no graphics this session."
+  coreArgs+=" -nographic -vga none"
+fi
+
+  # Check KVM is ready
+! isDry && [[ "$coreArgs" == *"accel=kvm"* ]] && checkKvmHypervisorEligibility
+
+  # Final check for any catches if we'd rather not start qemu in this state.
+if [ -n "$expectLaunchIssue" ] && ! isDry
+then
+  printer "" "fault"
+  printer "${colors[red]}Experienced $expectLaunchIssue issues" "fault"
+  printer "${colors[red]}Something went wrong above, refusing to run.\nPlease see above script output for a reason." "fault"
+  if [ -z "$FORCE" ]
+  then
+    exit 1
+  else
+    printer "${colors[yellow]}-force specified... dazed and confused but trying to continue..." fault
+  fi
+fi
+
+
+# _____ _
+#|  ___| |_   _
+#| |_  | | | | |
+#|  _| | | |_| |
+#|_|   |_|\__, |
+#         |___/
+
+if isDry
+then
+  printer "---------------------"
+  unset quiet
+  printer "Here are the completed args from this DRY run:"
+  printer "Core:\n${colors[blue]} $coreArgs $hugeArgs"
+  if [ -n "$networkArgs" ]; then printer "Net :\n${colors[blue]}${networkArgs}"                   ; fi
+  if [ -n "$usbArgs" ]    ; then printer "USB :\n${colors[blue]}${usbArgs}"                       ; fi
+  if [ -n "$pciArgs" ]    ; then printer "PCI :\n${colors[blue]}${pciArgs}"                       ; fi
+  if [ -n "$lgArgs" ]     ; then printer "Looking Glass:\n${colors[blue]}${lgArgs}"               ; fi
+  if [ -n "$kernelArgs" ] ; then printer "Direct Kernel Boot Args:\n${colors[blue]}${kernelArgs}" ; fi
+  if [ -n "$TPMArgs" ]    ; then printer "TPM:\n${colors[blue]}${TPMArgs}"                        ; fi
+  if [ -n "$extras" ]     ; then printer "Extras:\n${colors[blue]}${extras}"                      ; fi
+  if [ -n "${agentArgs}" ]; then printer "Agent:\n${colors[blue]}${agentArgs}"                    ; fi
+  printer "\nRun the script with the same arguments again and include ${colors[red]}-run${colors[none]} to actually pass these to qemu-system-x86_64\n"
+  exit 0
+else
+  sudo prlimit --pid $$ --memlock=unlimited:unlimited
+  set -m # Allow scripted bash job controls (fg, bg, etc)
+  echo -ne "Starting qemu...\n\n"
+  eval "qemu-system-x86_64 ${coreArgs} ${hugeArgs} ${networkArgs} ${usbArgs} ${pciArgs} ${lgArgs} ${kernelArgs} ${TPMArgs} ${extras} ${agentArgs} &"
+  qemuPid=$!
+  qemuJob=$(jobs -l | grep ${qemuPid} | awk -F'[][]' '{print $2}')
+  echo qemu pid is $qemuPid
+  sudo chrt -p 1 -p $qemuPid >/dev/null                  # Set qemus threads to have high priority
+  if [ -n "$vcpuPinningAfterQemuStart" ]; then pinVcpus $qemuPid & sleep 1 ; fi
+
+  if [ -n "${looking_glass_client_command}" ]
+  then
+    ${looking_glass_client_command} & # Open looking-glass-client in the background if enabled
+  elif [ -n "${remoteViewerCommand}" ]
+  then
+    ${remoteViewerCommand} & # Open remote-viewer in the background if -spice is in use
+  fi
+
+  # Bring qemu into the foreground for access to the console
+  fg %${qemuJob}
+fi
+
+
+# Cleanup will catch on Exit
