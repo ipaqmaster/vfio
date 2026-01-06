@@ -23,6 +23,29 @@ class VFIO:
 
         self.logger = Logger()
 
+        # What we will call to open qemu
+        self.cmdline = ['qemu-system-x86_64']
+
+        self.preparations()
+
+    def preparations(self):
+        self.exit_early = False
+        # Catch early exit calls, run them, and exit early.
+
+        if self.args['cpu_threads']:
+            print('yep')
+            cpu_threads()
+
+        if self.exit_early:
+            exit()
+
+
+        # Continue preparations
+        if self.args['agents']:
+            self.args['qemu_agent']         = True
+            self.args['spice']              = True
+            self.args['add_usb_controller'] = True
+
     def run(self):
         print('Stub commit.')
         print('Soon this will do something.')
@@ -33,3 +56,9 @@ class VFIO:
         check_path_program('date')
         check_path_program('file')
         check_path_program('tegsd')
+
+        if self.args['run']:
+            #run_cmd(self.cmdline)
+            run_cmd(['vim'])
+
+
