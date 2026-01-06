@@ -29,6 +29,7 @@
     },
     {
       "option_strings": [
+        "--avoid-virtio",
         "--avoidVirtio",
         "--noVirtio"
       ],
